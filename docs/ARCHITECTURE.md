@@ -784,9 +784,9 @@ frontend/
 
 ### Platform Settings System
 
-The `platform_settings` table is a key-value store configurable from the admin UI. Settings are grouped (server, mail, branding) and each has a human-readable label. The service layer provides defaults and falls back to environment variables when DB values are missing.
+The `platform_settings` table is a key-value store configurable from the admin UI. Settings are grouped (server, mail, branding) and each has a human-readable label plus a hint explaining what it does and how to fill it. The service layer provides defaults and falls back to environment variables when DB values are missing.
 
-Used by `buildDnsInstructions()` to generate personalized, step-by-step DNS setup guides for each client domain. The instructions include the actual server hostname, IP, and DMARC email from settings so clients get copy-paste-ready DNS records.
+Used by `buildDnsInstructions()` to generate personalized, step-by-step DNS setup guides for each client domain. The instructions include the actual server hostname, IP, and DMARC email from settings so clients get copy-paste-ready DNS records. Admin settings page shows hints in blue below each field so the platform operator knows exactly what each setting controls.
 
 ### Client Controls
 
@@ -809,12 +809,47 @@ A lightweight `/api/admin/server/metrics` endpoint is available for frequent pol
 
 ### DNS Guide System
 
-When a client adds a domain, the portal provides personalized DNS instructions. The `buildDnsInstructions()` function reads platform_settings (hostname, server IP, DMARC email) and generates 5 step-by-step records:
-1. TXT verification record
-2. MX record pointing to mail server
-3. SPF TXT record (includes server IP if configured)
+When a client adds a domain, both the admin and client portal provide personalized DNS instructions.
+The `buildDnsInstructions()` function reads platform_settings (hostname, server IP, DMARC email) and generates 5 step-by-step records:
+1. TXT verification record (ownership proof)
+2. MX record pointing to platform mail server (e.g., `mail.wenvia.global`)
+3. SPF TXT record (includes server IP for sender authorization)
 4. DKIM TXT record (from auto-generated 2048-bit RSA keypair)
 5. DMARC TXT record (with platform's DMARC report email)
+
+DNS instructions are **never hardcoded** — they pull from `platform_settings` so all clients
+get the same server hostname/IP, and changing it in Settings updates every client's guide instantly.
+
+The admin domain detail page also shows the DNS guide with copy buttons alongside the PASS/FAIL status cards.
+DNS verification (`dns.service.ts`) checks MX against both `server.hostname` and `PLATFORM_DOMAIN`,
+and SPF checks validate against hostname, IP, and `PLATFORM_DOMAIN`.
+
+**DNS pattern for ALL clients (same template, client fills in their domain):**
+```
+A     mail.yourplatform.com       -> <server.ip>                   (one-time platform setup)
+MX    clientdomain.com            -> mail.yourplatform.com (pri 10)
+TXT   clientdomain.com            -> mailplatform-verify=<token>
+TXT   clientdomain.com            -> v=spf1 ip4:<server.ip> include:<hostname> ~all
+TXT   mail._domainkey.clientdomain.com -> v=DKIM1; k=rsa; p=<generated>
+TXT   _dmarc.clientdomain.com     -> v=DMARC1; p=quarantine; rua=mailto:<dmarc_email>
+```
+
+### Webmail (Roundcube)
+
+Roundcube runs as a Docker container (port 9000) and is served via Nginx at `mail.wenvia.global`.
+This is the browser-based email client — like `mail.google.com` but for your platform.
+
+Any client's user can log in with their full email (`john@acme.com`) and password.
+Roundcube connects to Dovecot (IMAP, port 993) for reading and Postfix (SMTP, port 587) for sending.
+
+### Email Client Setup Instructions
+
+The portal mailboxes page shows IMAP/SMTP setup instructions with copy buttons once mailboxes exist.
+This guides clients to configure Thunderbird, Outlook, iPhone Mail, etc.:
+- **IMAP**: mail.wenvia.global, port 993, SSL/TLS
+- **SMTP**: mail.wenvia.global, port 587, STARTTLS
+- **Username**: full email address
+- **Webmail**: mail.wenvia.global (browser access)
 
 ---
 
@@ -823,12 +858,15 @@ When a client adds a domain, the portal provides personalized DNS instructions. 
 ### API Request Flow
 
 ```
-Browser -> Nginx (443)
-  -> /api/auth/*           -> Backend (3000) -> Admin auth
-  -> /api/client-portal/*  -> Backend (3000) -> Client auth + scoped data
-  -> /api/*                -> Backend (3000) -> Admin routes -> PostgreSQL
-  -> /webmail/*            -> Roundcube (9000) -> Dovecot (IMAP)
-  -> /*                    -> Frontend (8080) -> static React SPA
+Browser -> Nginx (80/443)
+  server_name: <VPS_IP> or admin domain
+    -> /api/auth/*           -> Backend (3000) -> Admin auth
+    -> /api/client-portal/*  -> Backend (3000) -> Client auth + scoped data
+    -> /api/*                -> Backend (3000) -> Admin routes -> PostgreSQL
+    -> /*                    -> Frontend (5173 dev / 8080 prod) -> React SPA
+
+  server_name: mail.wenvia.global (webmail)
+    -> /*                    -> Roundcube (9000) -> Dovecot (IMAP)
 ```
 
 ### Mail Flow (Incoming)
@@ -884,15 +922,15 @@ This is the critical bridge between your app and the mail server.
 
 ```
 # /etc/postfix/sql/virtual_domains.cf
-user = mailsystem
+user = mailplatform
 password = <db_password>
-hosts = localhost
+hosts = 127.0.0.1
 dbname = emailplatform
 query = SELECT domain_name FROM domains
-        WHERE domain_name='%s' AND status='active'
+        WHERE domain_name='%s' AND status='active' AND verified=true
 
 # /etc/postfix/sql/virtual_mailbox.cf
-query = SELECT d.domain_name || '/' || m.local_part || '/'
+query = SELECT CONCAT(d.domain_name, '/', m.local_part, '/')
         FROM mailboxes m JOIN domains d ON m.domain_id = d.id
         WHERE m.local_part='%u' AND d.domain_name='%d' AND m.status='active'
 
@@ -907,18 +945,23 @@ query = SELECT destination FROM aliases a
 ```
 # /etc/dovecot/dovecot-sql.conf
 driver = pgsql
-connect = host=localhost dbname=emailplatform user=mailsystem password=<db_password>
+connect = host=127.0.0.1 dbname=emailplatform user=mailplatform password=<db_password>
+default_pass_scheme = SHA512-CRYPT
 
-password_query = SELECT m.local_part || '@' || d.domain_name AS user,
+password_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user,
                         m.password_hash AS password
                  FROM mailboxes m JOIN domains d ON m.domain_id = d.id
                  WHERE m.local_part='%n' AND d.domain_name='%d' AND m.status='active'
 
-user_query = SELECT '/var/mail/vhosts/' || d.domain_name || '/' || m.local_part AS home,
+user_query = SELECT CONCAT('/var/mail/vhosts/', d.domain_name, '/', m.local_part) AS home,
                     5000 AS uid, 5000 AS gid,
-                    '*:bytes=' || (m.quota_mb * 1024 * 1024) AS quota_rule
+                    CONCAT('*:bytes=', m.quota_mb * 1048576) AS quota_rule
              FROM mailboxes m JOIN domains d ON m.domain_id = d.id
-             WHERE m.local_part='%n' AND d.domain_name='%d'
+             WHERE m.local_part='%n' AND d.domain_name='%d' AND m.status='active'
+
+iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
+                FROM mailboxes m JOIN domains d ON m.domain_id = d.id
+                WHERE m.status='active'
 ```
 
 ---

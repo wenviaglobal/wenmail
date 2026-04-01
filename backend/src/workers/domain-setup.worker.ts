@@ -6,7 +6,7 @@ import { db } from "../db/index.js";
 import { domains } from "../db/schema.js";
 import { verifyDomain } from "../modules/domains/domain.service.js";
 
-interface DomainSetupData {
+export interface DomainSetupData {
   domainId: string;
 }
 

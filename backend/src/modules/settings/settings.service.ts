@@ -4,15 +4,15 @@ import { platformSettings } from "../../db/schema.js";
 import { env } from "../../config/env.js";
 
 // Default settings — used when DB has no value yet
-const DEFAULTS: Record<string, { value: string; label: string; group: string }> = {
-  "server.hostname": { value: "mail.yourplatform.com", label: "Mail Server Hostname", group: "server" },
-  "server.ip": { value: "", label: "Server Public IP", group: "server" },
-  "server.webmail_url": { value: "", label: "Webmail URL (Roundcube)", group: "server" },
-  "mail.postmaster_email": { value: "postmaster@yourplatform.com", label: "Postmaster Email", group: "mail" },
-  "mail.dmarc_email": { value: "dmarc@yourplatform.com", label: "DMARC Report Email", group: "mail" },
-  "mail.max_attachment_mb": { value: "25", label: "Max Attachment Size (MB)", group: "mail" },
-  "branding.platform_name": { value: "MailPlatform", label: "Platform Name", group: "branding" },
-  "branding.support_email": { value: "support@yourplatform.com", label: "Support Email", group: "branding" },
+const DEFAULTS: Record<string, { value: string; label: string; group: string; hint: string }> = {
+  "server.hostname": { value: "mail.yourplatform.com", label: "Mail Server Hostname", group: "server", hint: "The hostname clients point their MX records to (e.g., mail.wenvia.global). Must have an A record pointing to your server IP." },
+  "server.ip": { value: "", label: "Server Public IP", group: "server", hint: "Your VPS public IP address. Used in SPF records so receiving servers trust emails from this IP." },
+  "server.webmail_url": { value: "", label: "Webmail URL (Roundcube)", group: "server", hint: "The URL where clients access webmail (e.g., https://mail.wenvia.global). This is like mail.google.com but for your platform." },
+  "mail.postmaster_email": { value: "postmaster@yourplatform.com", label: "Postmaster Email", group: "mail", hint: "Receives bounce notifications and delivery failure reports. Use postmaster@yourdomain." },
+  "mail.dmarc_email": { value: "dmarc@yourplatform.com", label: "DMARC Report Email", group: "mail", hint: "Receives DMARC aggregate reports from Gmail, Outlook, etc. Helps you monitor email authentication health." },
+  "mail.max_attachment_mb": { value: "25", label: "Max Attachment Size (MB)", group: "mail", hint: "Maximum size of email attachments in megabytes. 25 MB is standard (matches Gmail's limit)." },
+  "branding.platform_name": { value: "MailPlatform", label: "Platform Name", group: "branding", hint: "Shown in the client portal header and email notifications. Your business/product name." },
+  "branding.support_email": { value: "support@yourplatform.com", label: "Support Email", group: "branding", hint: "Displayed in the client portal for support requests. Clients see this when they need help." },
 };
 
 /**
@@ -34,19 +34,21 @@ export async function getSetting(key: string): Promise<string> {
 /**
  * Get all settings as a flat object.
  */
-export async function getAllSettings(): Promise<Record<string, { value: string; label: string; group: string }>> {
+export async function getAllSettings(): Promise<Record<string, { value: string; label: string; group: string; hint: string }>> {
   const rows = await db.select().from(platformSettings);
 
   // Start with defaults, overlay with DB values
-  const result: Record<string, { value: string; label: string; group: string }> = {};
+  const result: Record<string, { value: string; label: string; group: string; hint: string }> = {};
   for (const [key, def] of Object.entries(DEFAULTS)) {
     result[key] = { ...def };
   }
   for (const row of rows) {
+    const def = DEFAULTS[row.key];
     result[row.key] = {
       value: row.value,
       label: row.label ?? row.key,
       group: row.group ?? "other",
+      hint: def?.hint ?? "",
     };
   }
   return result;

@@ -1,11 +1,29 @@
 import { useParams } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
-import { domainsApi, type DnsCheckResult } from "../../api/domains";
+import { RefreshCw, Copy, CheckCircle } from "lucide-react";
+import { domainsApi, type DnsCheckResult, type DnsGuide } from "../../api/domains";
 import { mailboxesApi, type Mailbox } from "../../api/mailboxes";
 import { DnsStatusBadge } from "../../components/dns-status-badge";
 import { DataTable } from "../../components/data-table";
 import { QuotaBar } from "../../components/quota-bar";
+import { useState } from "react";
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+    >
+      {copied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
+    </button>
+  );
+}
 
 export function DomainDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +32,12 @@ export function DomainDetailPage() {
   const { data: dnsStatus = [], isLoading } = useQuery({
     queryKey: ["dns-status", id],
     queryFn: () => domainsApi.dnsStatus(id!),
+    enabled: !!id,
+  });
+
+  const { data: guide } = useQuery({
+    queryKey: ["dns-guide", id],
+    queryFn: () => domainsApi.dnsGuide(id!),
     enabled: !!id,
   });
 
@@ -98,6 +122,65 @@ export function DomainDetailPage() {
           );
         })}
       </div>
+
+      {/* DNS Setup Guide */}
+      {guide && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold mb-4">DNS Setup Guide</h2>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-4">
+            <h3 className="font-medium text-indigo-900 mb-2">Mail Server Info</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="text-indigo-600">Hostname:</span>{" "}
+                <code className="bg-white px-2 py-0.5 rounded">{guide.summary.hostname}</code>
+              </div>
+              <div>
+                <span className="text-indigo-600">IP:</span>{" "}
+                <code className="bg-white px-2 py-0.5 rounded">{guide.summary.serverIp || "Not set"}</code>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {guide.records.map((rec) => (
+              <div key={rec.step} className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="bg-indigo-600 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
+                    {rec.step}
+                  </span>
+                  <span className="font-medium text-sm">{rec.purpose}</span>
+                  <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-mono ml-auto">
+                    {rec.type}{rec.priority ? ` (Priority: ${rec.priority})` : ""}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-500">
+                      <span className="font-medium">Host:</span>{" "}
+                      <code className="bg-gray-50 px-1 rounded">{rec.hostHint}</code>
+                    </div>
+                    <CopyButton text={rec.hostHint} />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 font-medium">Value:</span>
+                      <CopyButton text={rec.value} />
+                    </div>
+                    <code className="block bg-gray-50 border border-gray-200 px-3 py-2 rounded text-xs mt-1 break-all">
+                      {rec.value}
+                    </code>
+                  </div>
+                  {rec.note && (
+                    <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-700">
+                      {rec.note}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Mailboxes */}
       <h2 className="text-lg font-semibold mb-4">Mailboxes</h2>

@@ -1,11 +1,21 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe } from "lucide-react";
 import { portalApi } from "../../api/portal";
 import { type Domain } from "../../api/domains";
 import { type Mailbox } from "../../api/mailboxes";
 import { DataTable } from "../../components/data-table";
 import { QuotaBar } from "../../components/quota-bar";
+
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+      {copied ? <><CheckCircle size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
+    </button>
+  );
+}
 
 export function PortalMailboxesPage() {
   const queryClient = useQueryClient();
@@ -104,6 +114,123 @@ export function PortalMailboxesPage() {
         <div className="text-slate-400">Loading...</div>
       ) : (
         <DataTable columns={columns} data={mailboxes} keyExtractor={(m) => m.id} emptyMessage="No mailboxes yet." />
+      )}
+
+      {/* Email Setup Instructions */}
+      {mailboxes.length > 0 && selectedDomain && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold mb-4">How to Use Your Email</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Webmail */}
+            <div className="bg-white border border-slate-200 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe size={20} className="text-indigo-600" />
+                <h3 className="font-semibold">Webmail (Browser)</h3>
+              </div>
+              <p className="text-sm text-slate-500 mb-3">
+                Access your email from any browser — no app needed.
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500">URL</span>
+                    <CopyBtn text="mail.wenvia.global" />
+                  </div>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm mt-1">
+                    mail.wenvia.global
+                  </code>
+                </div>
+                <p className="text-xs text-slate-400">Login with your full email and password</p>
+              </div>
+            </div>
+
+            {/* Desktop App */}
+            <div className="bg-white border border-slate-200 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Monitor size={20} className="text-indigo-600" />
+                <h3 className="font-semibold">Desktop App</h3>
+              </div>
+              <p className="text-sm text-slate-500 mb-3">
+                Thunderbird, Outlook, Apple Mail, etc.
+              </p>
+              <p className="text-xs text-slate-400">Use the IMAP/SMTP settings below</p>
+            </div>
+
+            {/* Mobile */}
+            <div className="bg-white border border-slate-200 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Smartphone size={20} className="text-indigo-600" />
+                <h3 className="font-semibold">Phone / Tablet</h3>
+              </div>
+              <p className="text-sm text-slate-500 mb-3">
+                iPhone Mail, Gmail App, Outlook Mobile, etc.
+              </p>
+              <p className="text-xs text-slate-400">Use the IMAP/SMTP settings below</p>
+            </div>
+          </div>
+
+          {/* IMAP/SMTP Settings */}
+          <div className="bg-white border border-slate-200 rounded-lg p-5">
+            <h3 className="font-semibold mb-4">IMAP / SMTP Settings</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Incoming */}
+              <div>
+                <h4 className="text-sm font-medium text-indigo-700 mb-3 uppercase tracking-wide">Incoming Mail (IMAP)</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-600">Server</span>
+                    <CopyBtn text="mail.wenvia.global" />
+                  </div>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">mail.wenvia.global</code>
+
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm text-slate-600">Port</span>
+                    <CopyBtn text="993" />
+                  </div>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">993</code>
+
+                  <div className="mt-2">
+                    <span className="text-sm text-slate-600">Security</span>
+                    <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm mt-1">SSL/TLS</code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Outgoing */}
+              <div>
+                <h4 className="text-sm font-medium text-indigo-700 mb-3 uppercase tracking-wide">Outgoing Mail (SMTP)</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-600">Server</span>
+                    <CopyBtn text="mail.wenvia.global" />
+                  </div>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">mail.wenvia.global</code>
+
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm text-slate-600">Port</span>
+                    <CopyBtn text="587" />
+                  </div>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">587</code>
+
+                  <div className="mt-2">
+                    <span className="text-sm text-slate-600">Security</span>
+                    <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm mt-1">STARTTLS</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-200">
+              <p className="text-sm text-slate-600">
+                <strong>Username:</strong> Your full email address (e.g., <code className="bg-slate-50 px-1 rounded">{mailboxes[0]?.localPart}@{mailboxes[0]?.domainName}</code>)
+              </p>
+              <p className="text-sm text-slate-600 mt-1">
+                <strong>Password:</strong> The password you set when creating the mailbox
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

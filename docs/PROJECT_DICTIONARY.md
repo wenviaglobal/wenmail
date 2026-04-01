@@ -371,25 +371,28 @@ Health Checks:
 Location:    backend/src/modules/settings/
 Type:        backend
 Depends On:  PostgreSQL (platform_settings table), auth guard
-Used By:     Frontend admin (settings page), portal DNS guide (buildDnsInstructions)
-Description: Platform-wide key-value config store with defaults and DNS instruction builder
+Used By:     Frontend admin (settings page), portal DNS guide (buildDnsInstructions),
+             domain.routes (domain creation returns DNS instructions),
+             dns.service (MX/SPF checks use hostname + IP from settings)
+Description: Platform-wide key-value config store with defaults, hints, and DNS instruction builder
 Files:
   settings.routes.ts   -> GET/PUT /api/admin/settings (registered under /api/admin/settings prefix)
   settings.service.ts  -> getSetting(), getAllSettings(), updateSettings(), buildDnsInstructions()
 Endpoints:
-  GET    /api/admin/settings      -> all settings (defaults overlaid with DB values, grouped by server/mail/branding)
+  GET    /api/admin/settings      -> all settings (defaults overlaid with DB values, grouped by server/mail/branding, includes hints)
   PUT    /api/admin/settings      -> upsert settings (body: Record<string, string>)
-Default Settings:
-  server.hostname            -> "mail.yourplatform.com"   (group: server)
-  server.ip                  -> ""                        (group: server)
-  server.webmail_url         -> ""                        (group: server)
-  mail.postmaster_email      -> "postmaster@..."          (group: mail)
-  mail.dmarc_email           -> "dmarc@..."               (group: mail)
-  mail.max_attachment_mb     -> "25"                      (group: mail)
-  branding.platform_name     -> "MailPlatform"            (group: branding)
-  branding.support_email     -> "support@..."             (group: branding)
+Default Settings (each with hint text for admin guidance):
+  server.hostname            -> "mail.yourplatform.com"   (group: server)  hint: MX target hostname
+  server.ip                  -> ""                        (group: server)  hint: VPS public IP for SPF
+  server.webmail_url         -> ""                        (group: server)  hint: Roundcube URL
+  mail.postmaster_email      -> "postmaster@..."          (group: mail)    hint: bounce notifications
+  mail.dmarc_email           -> "dmarc@..."               (group: mail)    hint: DMARC reports
+  mail.max_attachment_mb     -> "25"                      (group: mail)    hint: attachment limit
+  branding.platform_name     -> "MailPlatform"            (group: branding) hint: shown in portal
+  branding.support_email     -> "support@..."             (group: branding) hint: support contact
 Functions:
   buildDnsInstructions(domain) -> returns step-by-step DNS records using live settings (hostname, IP, DMARC email)
+                                  Used by: domain creation route, admin dns-guide endpoint, portal dns-guide endpoint
 ```
 
 ### Module: client-portal/auth
@@ -620,12 +623,13 @@ Description: Admin view for a single client — service toggle, billing status, 
 ```
 Location:    frontend/src/pages/domains/
 Type:        frontend
-Depends On:  /api/clients/:clientId/domains, /api/domains/:id endpoints
+Depends On:  /api/clients/:clientId/domains, /api/domains/:id endpoints, /api/domains/:id/dns-guide
 Description: Manage domains, verify DNS, see setup status
 Files:
   list.tsx          -> all domains with verification status badges
-  detail.tsx        -> single domain — DNS status, mailboxes, aliases
-  dns-guide.tsx     -> step-by-step DNS record setup instructions (TXT, MX, SPF, DKIM, DMARC)
+  detail.tsx        -> single domain — DNS PASS/FAIL cards, DNS setup guide (fetched from backend
+                       with copy buttons, uses platform settings for hostname/IP), mailboxes table
+  dns-guide.tsx     -> legacy static DNS guide component (admin-side, superseded by backend dns-guide)
 ```
 
 ### Page: Mailboxes
@@ -681,6 +685,8 @@ Location:    frontend/src/pages/admin/settings.tsx
 Type:        frontend
 Depends On:  GET /api/admin/settings, PUT /api/admin/settings
 Description: Platform settings editor — server hostname, IP, webmail URL, mail config, branding
+             Each field shows a blue hint explaining what it does and how to fill it.
+             Hints come from the backend (settings.service.ts DEFAULTS).
 ```
 
 ### Admin Shared Components
@@ -715,7 +721,7 @@ Files:
   client.ts         -> ky instance (prefixUrl: "/api", auto Bearer token from localStorage, 401 redirect to /login)
   auth.ts           -> login, logout, refresh API calls
   clients.ts        -> client CRUD API calls
-  domains.ts        -> domain CRUD + verify + dns-status API calls
+  domains.ts        -> domain CRUD + verify + dns-status + dns-guide API calls (DnsGuide, DnsRecord types)
   mailboxes.ts      -> mailbox CRUD API calls
   admin.ts          -> adminApi object: serverHealth, serverMetrics, updateClientControls, getClientBilling,
                        getClientUsers, createClientUser, listInvoices, createInvoice, updateInvoiceStatus,
@@ -761,8 +767,10 @@ Files:
   dashboard.tsx       -> client overview — domain/mailbox/alias counts, plan limits, quick actions
   getting-started.tsx -> onboarding guide — steps to set up first domain and mailbox
   domains.tsx         -> manage client's own domains (add, verify, view status)
-  dns-setup.tsx       -> per-domain DNS setup wizard (personalized instructions from /dns-guide)
-  mailboxes.tsx       -> manage mailboxes across client's domains
+  dns-setup.tsx       -> per-domain DNS setup wizard (personalized instructions from /dns-guide,
+                         includes "What are these records?" explainer + step-by-step registrar guide)
+  mailboxes.tsx       -> manage mailboxes across client's domains + email setup instructions
+                         (webmail URL, IMAP/SMTP settings with copy buttons, shown when mailboxes exist)
   aliases.tsx         -> manage aliases across client's domains
   logs.tsx            -> client's own mail logs (scoped to their domains)
   billing.tsx         -> view invoices and payment history

@@ -3,7 +3,6 @@ import { z } from "zod";
 import { authGuard } from "../auth/auth.guard.js";
 import * as domainService from "./domain.service.js";
 import { buildDnsInstructions } from "../settings/settings.service.js";
-import { env } from "../../config/env.js";
 
 const createDomainSchema = z.object({
   domainName: z
@@ -34,38 +33,9 @@ export async function domainRoutes(app: FastifyInstance) {
         domainName,
       );
 
-      // Return domain with DNS setup instructions
-      return reply.status(201).send({
-        domain,
-        dnsInstructions: {
-          verification: {
-            type: "TXT",
-            host: domainName,
-            value: `mailplatform-verify=${domain.verificationToken}`,
-          },
-          mx: {
-            type: "MX",
-            host: domainName,
-            value: env.PLATFORM_DOMAIN,
-            priority: 10,
-          },
-          spf: {
-            type: "TXT",
-            host: domainName,
-            value: `v=spf1 include:${env.PLATFORM_DOMAIN} ~all`,
-          },
-          dkim: {
-            type: "TXT",
-            host: `${domain.dkimSelector}._domainkey.${domainName}`,
-            value: `v=DKIM1; k=rsa; p=${extractDkimPublicKey(domain.dkimPublicKey!)}`,
-          },
-          dmarc: {
-            type: "TXT",
-            host: `_dmarc.${domainName}`,
-            value: `v=DMARC1; p=quarantine; rua=mailto:dmarc@${env.PLATFORM_DOMAIN}`,
-          },
-        },
-      });
+      // Return domain with DNS setup instructions from platform settings
+      const dnsInstructions = await buildDnsInstructions(domain);
+      return reply.status(201).send({ domain, dnsInstructions });
     },
   );
 
@@ -103,10 +73,3 @@ export async function domainRoutes(app: FastifyInstance) {
   );
 }
 
-/** Extract raw base64 public key from PEM format */
-function extractDkimPublicKey(pem: string): string {
-  return pem
-    .replace("-----BEGIN PUBLIC KEY-----", "")
-    .replace("-----END PUBLIC KEY-----", "")
-    .replace(/\s/g, "");
-}

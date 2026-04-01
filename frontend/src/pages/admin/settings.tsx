@@ -4,7 +4,7 @@ import { Settings, Save, Server, Mail, Palette } from "lucide-react";
 import { api } from "../../api/client";
 
 interface SettingsMap {
-  [key: string]: { value: string; label: string; group: string };
+  [key: string]: { value: string; label: string; group: string; hint?: string };
 }
 
 const groupInfo: Record<string, { icon: typeof Server; title: string; description: string }> = {
@@ -46,11 +46,11 @@ export function AdminSettingsPage() {
   if (isLoading) return <div className="text-gray-400">Loading settings...</div>;
 
   // Group settings by category
-  const groups: Record<string, Array<{ key: string; value: string; label: string }>> = {};
+  const groups: Record<string, Array<{ key: string; value: string; label: string; hint?: string }>> = {};
   if (settings) {
     for (const [key, s] of Object.entries(settings)) {
       if (!groups[s.group]) groups[s.group] = [];
-      groups[s.group].push({ key, value: form[key] ?? s.value, label: s.label });
+      groups[s.group].push({ key, value: form[key] ?? s.value, label: s.label, hint: s.hint });
     }
   }
 
@@ -94,7 +94,7 @@ export function AdminSettingsPage() {
               <p className="text-sm text-gray-400 mb-4 ml-8">{info.description}</p>
 
               <div className="space-y-4 ml-8">
-                {fields.map(({ key, value, label }) => (
+                {fields.map(({ key, value, label, hint }) => (
                   <div key={key}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
                     <input
@@ -104,7 +104,10 @@ export function AdminSettingsPage() {
                       placeholder={`Enter ${label.toLowerCase()}`}
                       className="w-full max-w-lg px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <p className="text-xs text-gray-400 mt-1">Key: <code className="bg-gray-100 px-1 rounded">{key}</code></p>
+                    {hint && (
+                      <p className="text-xs text-blue-600 mt-1 max-w-lg">{hint}</p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-0.5">Key: <code className="bg-gray-100 px-1 rounded">{key}</code></p>
                   </div>
                 ))}
               </div>

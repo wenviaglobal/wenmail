@@ -1,6 +1,7 @@
 import { resolve, resolveMx, resolveTxt } from "node:dns/promises";
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
+import { getSetting } from "../settings/settings.service.js";
 
 export interface DnsCheckResult {
   type: "mx" | "spf" | "dkim" | "dmarc" | "verify";
@@ -36,9 +37,11 @@ export async function verifyDomainOwnership(
  */
 export async function checkMx(domainName: string): Promise<DnsCheckResult> {
   try {
+    const hostname = await getSetting("server.hostname");
     const records = await resolveMx(domainName);
     const found = records.some(
-      (r) => r.exchange.toLowerCase() === env.PLATFORM_DOMAIN.toLowerCase(),
+      (r) => r.exchange.toLowerCase() === hostname.toLowerCase() ||
+             r.exchange.toLowerCase() === env.PLATFORM_DOMAIN.toLowerCase(),
     );
     return {
       type: "mx",
@@ -51,14 +54,20 @@ export async function checkMx(domainName: string): Promise<DnsCheckResult> {
 }
 
 /**
- * Check if SPF record includes our domain.
+ * Check if SPF record includes our server (by hostname or IP).
  */
 export async function checkSpf(domainName: string): Promise<DnsCheckResult> {
   try {
+    const hostname = await getSetting("server.hostname");
+    const serverIp = await getSetting("server.ip");
     const records = await resolveTxt(domainName);
     const flat = records.map((r) => r.join(""));
     const spf = flat.find((r) => r.startsWith("v=spf1"));
-    const pass = !!spf && spf.includes(env.PLATFORM_DOMAIN);
+    const pass = !!spf && (
+      spf.includes(hostname) ||
+      spf.includes(env.PLATFORM_DOMAIN) ||
+      (!!serverIp && spf.includes(serverIp))
+    );
     return { type: "spf", pass, raw: spf || "no SPF record found" };
   } catch (err) {
     return { type: "spf", pass: false, raw: String(err) };

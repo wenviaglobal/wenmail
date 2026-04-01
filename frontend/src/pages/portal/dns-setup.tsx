@@ -57,10 +57,51 @@ export function PortalDnsSetupPage() {
       </Link>
 
       <h1 className="text-2xl font-bold mb-2">DNS Setup Guide</h1>
-      <p className="text-slate-500 mb-6">
+      <p className="text-slate-500 mb-4">
         Add these DNS records at your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.).
         DNS changes can take 5 minutes to 48 hours to propagate.
       </p>
+
+      {/* What are these records */}
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-5 mb-6">
+        <h3 className="font-semibold text-slate-800 mb-3">What are these records?</h3>
+        <p className="text-sm text-slate-600 mb-4">
+          DNS records tell the internet how to handle your domain's email.
+          Think of them as instructions you post at your domain registrar
+          so email servers know where to deliver mail and how to verify it's legitimate.
+        </p>
+        <div className="space-y-2 text-sm">
+          <div className="flex gap-3">
+            <span className="font-mono font-semibold text-indigo-700 w-24 shrink-0">MX</span>
+            <span className="text-slate-600">"Send emails for my domain to this mail server"</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="font-mono font-semibold text-indigo-700 w-24 shrink-0">SPF</span>
+            <span className="text-slate-600">"Only this server is allowed to send emails from my domain"</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="font-mono font-semibold text-indigo-700 w-24 shrink-0">DKIM</span>
+            <span className="text-slate-600">"Here's my digital signature — verify emails are really from me"</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="font-mono font-semibold text-indigo-700 w-24 shrink-0">DMARC</span>
+            <span className="text-slate-600">"If an email fails SPF/DKIM checks, here's what to do with it"</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="font-mono font-semibold text-indigo-700 w-24 shrink-0">TXT Verify</span>
+            <span className="text-slate-600">"I own this domain — here's my proof token"</span>
+          </div>
+        </div>
+        <div className="mt-4 pt-3 border-t border-slate-200">
+          <h4 className="font-medium text-slate-700 mb-1">Where to add these?</h4>
+          <ol className="text-sm text-slate-600 list-decimal list-inside space-y-1">
+            <li>Log in to your domain registrar (where you bought your domain)</li>
+            <li>Find <strong>"DNS Settings"</strong> or <strong>"Advanced DNS"</strong></li>
+            <li>Add each record below one by one using the Copy buttons</li>
+            <li>Come back here and click <strong>"Verify"</strong> on the Domains page</li>
+          </ol>
+        </div>
+      </div>
 
       {/* Server info */}
       <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">

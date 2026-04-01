@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import { randomBytes, createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 
 /**
  * Hash a password using argon2 for API-level auth (admin login).
@@ -17,25 +17,30 @@ export async function verifyPassword(hash: string, password: string): Promise<bo
 
 /**
  * Hash a password in SHA512-CRYPT format for Dovecot compatibility.
- * Dovecot uses {SHA512-CRYPT} prefix with standard crypt(3) format.
- * Format: {SHA512-CRYPT}$6$<salt>$<hash>
+ * Uses `doveadm pw` to generate a proper crypt(3) hash that Dovecot can verify.
  */
 export function hashPasswordForDovecot(password: string): string {
-  const salt = randomBytes(12).toString("base64url").slice(0, 16);
-  // Use the doveadm-compatible format
-  // In production, call `doveadm pw -s SHA512-CRYPT -p <password>` instead
-  // For now, store as {BLF-CRYPT} via argon2 which Dovecot 2.3+ supports
-  // We'll use the async version and the caller will await it
-  return `{SHA512-CRYPT}$6$${salt}$${sha512Crypt(password, salt)}`;
+  try {
+    const result = execSync(
+      `doveadm pw -s SHA512-CRYPT -p ${shellEscape(password)}`,
+      { encoding: "utf-8", timeout: 5000 },
+    );
+    return result.trim();
+  } catch {
+    // Fallback: use BLF-CRYPT via doveadm if SHA512-CRYPT fails
+    try {
+      const result = execSync(
+        `doveadm pw -s BLF-CRYPT -p ${shellEscape(password)}`,
+        { encoding: "utf-8", timeout: 5000 },
+      );
+      return result.trim();
+    } catch {
+      throw new Error("Failed to hash password: doveadm not available");
+    }
+  }
 }
 
-/**
- * Simplified SHA512-CRYPT. In production, use `doveadm pw` command
- * or a proper crypt(3) library for full compatibility.
- */
-function sha512Crypt(password: string, salt: string): string {
-  const hash = createHash("sha512")
-    .update(password + salt)
-    .digest("base64url");
-  return hash;
+/** Escape a string for safe shell use */
+function shellEscape(str: string): string {
+  return "'" + str.replace(/'/g, "'\\''") + "'";
 }
