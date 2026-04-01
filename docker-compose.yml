@@ -1,0 +1,94 @@
+services:
+  # ============================================
+  # PostgreSQL — Primary database
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: emailplatform
+      POSTGRES_USER: mailplatform
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mailplatform_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailplatform -d emailplatform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis — Sessions, job queue, rate limiting
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Backend API — Node.js + Fastify
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://mailplatform:${DB_PASSWORD:-mailplatform_dev}@postgres:5432/emailplatform
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production-use-64-chars-minimum-here}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-mail.yourplatform.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ============================================
+  # Frontend — React SPA served by Nginx
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+
+  # ============================================
+  # Roundcube — Webmail client
+  # ============================================
+  roundcube:
+    image: roundcube/roundcubemail:latest
+    restart: unless-stopped
+    ports:
+      - "9000:80"
+    environment:
+      ROUNDCUBEMAIL_DEFAULT_HOST: ${PLATFORM_DOMAIN:-mail.yourplatform.com}
+      ROUNDCUBEMAIL_DEFAULT_PORT: 993
+      ROUNDCUBEMAIL_SMTP_SERVER: ${PLATFORM_DOMAIN:-mail.yourplatform.com}
+      ROUNDCUBEMAIL_SMTP_PORT: 587
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
