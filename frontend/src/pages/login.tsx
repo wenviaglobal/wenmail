@@ -16,7 +16,7 @@ export function LoginPage() {
 
     try {
       await login(email, password);
-      navigate("/");
+      navigate("/admin");
     } catch {
       setError("Invalid email or password");
     } finally {
@@ -28,7 +28,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-lg border border-gray-200 p-8">
-          <h1 className="text-xl font-bold text-center mb-1">MailPlatform</h1>
+          <h1 className="text-xl font-bold text-center mb-1">WenMail</h1>
           <p className="text-sm text-gray-500 text-center mb-6">Admin Login</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">

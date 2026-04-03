@@ -294,3 +294,19 @@ export const auditLog = pgTable("audit_log", {
   ipAddress: inet("ip_address"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
+
+// ============================================
+// PASSWORD RESET REQUESTS (DB-based, no email)
+// ============================================
+
+export const passwordResetRequests = pgTable("password_reset_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientUserId: uuid("client_user_id").notNull().references(() => clientUsers.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 255 }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending"),
+  resolvedBy: uuid("resolved_by"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});

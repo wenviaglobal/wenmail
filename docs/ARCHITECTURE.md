@@ -65,8 +65,9 @@ HOW it works:
     - client_users table (email + argon2 password, linked to a client)
     - JWT payload: { id, clientId, email, role, type: "client" }
     - Guard: client-auth.guard.ts — verifies JWT + checks type === "client"
-    - Routes: /api/client-portal/auth/login, /refresh, /me, /password
+    - Routes: /api/client-portal/auth/login, /refresh, /me, /password, /forgot-password
     - Client status checked: suspended clients cannot log in
+    - Forgot password: client submits request (public, no auth) -> admin resolves it manually
 
   Token lifetimes:
     - Admin: 15min access + 7d refresh
@@ -178,8 +179,8 @@ WHY NOT Next.js:
 |   Incoming Email --> MX DNS --> Your VPS IP (port 25)           |
 |   Outgoing Email <-- SPF/DKIM/DMARC verified (port 25)         |
 |   Users ----------> IMAPS (993) / SMTP Submission (587)         |
-|   Admins ---------> HTTPS (443) -> Dashboard + API             |
-|   Clients --------> HTTPS (443) -> Client Portal + API         |
+|   Admins ---------> HTTPS (443) wenvia.global/admin             |
+|   Clients --------> HTTPS (443) wpanel.wenvia.global/portal    |
 +--------+------------------+-------------------+-----------------+
          |                  |                   |
 +--------v------------------v-------------------v-----------------+
@@ -521,6 +522,22 @@ CREATE TABLE audit_log (
     ip_address  INET,
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================
+-- PASSWORD RESET REQUESTS (DB-based, no email)
+-- ============================================
+
+CREATE TABLE password_reset_requests (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_user_id  UUID NOT NULL REFERENCES client_users(id),
+    client_id       UUID NOT NULL REFERENCES clients(id),
+    email           VARCHAR(255) NOT NULL,
+    status          VARCHAR(20) DEFAULT 'pending',     -- pending, completed, rejected
+    resolved_by     UUID REFERENCES admins(id),
+    resolved_at     TIMESTAMPTZ,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ### Key Relationships
@@ -536,6 +553,8 @@ invoices 1--* payments
 domains 1--* mailboxes
 domains 1--* aliases
 domains 1--* dns_checks
+client_users 1--* password_reset_requests
+admins 1--* password_reset_requests (resolved_by)
 ```
 
 ---
@@ -554,8 +573,10 @@ backend/
 │   │
 │   ├── db/
 │   │   ├── index.ts                   # Drizzle client instance
-│   │   ├── schema.ts                  # ALL Drizzle table definitions (14 tables)
+│   │   ├── schema.ts                  # ALL Drizzle table definitions (15 tables)
 │   │   └── migrations/               # SQL migration files (drizzle-kit)
+│   │       ├── 0001_*.sql             # Initial schema
+│   │       └── 0002_fuzzy_chimera.sql # password_reset_requests table
 │   │
 │   ├── modules/
 │   │   ├── auth/
@@ -617,7 +638,8 @@ backend/
 │   │
 │   ├── mail/
 │   │   ├── postfix.ts                 # Execute postfix reload, reloadPostfix(), reloadDovecot()
-│   │   └── dovecot.ts                 # Execute doveadm commands
+│   │   ├── dovecot.ts                 # Execute doveadm commands
+│   │   └── welcome.ts                 # Send welcome email with IMAP/SMTP setup to new mailboxes
 │   │
 │   └── lib/
 │       ├── password.ts                # hashPassword (argon2), hashPasswordForDovecot (SHA512-CRYPT), verifyPassword
@@ -652,8 +674,10 @@ frontend/
 │   │
 │   ├── pages/
 │   │   │
+│   │   ├── landing.tsx                 # Public landing page (features, pricing, 3-step guide)
+│   │   │
 │   │   │  ── ADMIN PAGES ──
-│   │   ├── login.tsx                  # Admin login
+│   │   ├── login.tsx                  # Admin login (at /admin/login)
 │   │   ├── dashboard.tsx              # Admin dashboard (aggregate stats)
 │   │   ├── clients/
 │   │   │   ├── list.tsx               # All clients
@@ -750,6 +774,8 @@ frontend/
 | GET    | /api/admin/server/metrics         | Lightweight metrics for polling            |
 | GET    | /api/admin/settings               | Get all platform settings                  |
 | PUT    | /api/admin/settings               | Update platform settings                   |
+| GET    | /api/admin/password-resets        | List all password reset requests           |
+| PUT    | /api/admin/password-resets/:id    | Resolve reset request (set new password)   |
 | GET    | /api/health                       | Public health check                        |
 
 ### Client Portal Routes (JWT type: client)
@@ -760,6 +786,7 @@ frontend/
 | POST   | /api/client-portal/auth/refresh                | Refresh client token                   |
 | GET    | /api/client-portal/auth/me                     | Current user profile                   |
 | PUT    | /api/client-portal/auth/password               | Change password                        |
+| POST   | /api/client-portal/auth/forgot-password        | Submit password reset request (public)  |
 | GET    | /api/client-portal/dashboard                   | Client stats + plan limits             |
 | GET    | /api/client-portal/domains                     | Client's domains                       |
 | POST   | /api/client-portal/domains                     | Add domain (with DKIM generation)      |
@@ -776,6 +803,7 @@ frontend/
 | DELETE | /api/client-portal/aliases/:id                 | Delete alias                           |
 | GET    | /api/client-portal/logs                        | Client's mail logs (paginated)         |
 | GET    | /api/client-portal/billing                     | Client's invoices + payments           |
+| GET    | /api/client-portal/mail-settings               | IMAP/SMTP/webmail config from settings |
 | GET    | /api/client-portal/migration/info              | Import/export instructions             |
 
 ---
@@ -838,18 +866,24 @@ TXT   _dmarc.clientdomain.com     -> v=DMARC1; p=quarantine; rua=mailto:<dmarc_e
 
 Roundcube runs as a Docker container (port 9000) and is served via Nginx at `mail.wenvia.global`.
 This is the browser-based email client — like `mail.google.com` but for your platform.
+Branded as "WenMail" with custom logos, glossy indigo theme (light + dark mode), and watermark removed.
+Custom branding files live in `roundcube-custom/` and are volume-mounted into the container.
+A setup help page at `/setup-help.html` provides email client configuration instructions.
+The support link in Roundcube points to this setup guide.
 
 Any client's user can log in with their full email (`john@acme.com`) and password.
 Roundcube connects to Dovecot (IMAP, port 993) for reading and Postfix (SMTP, port 587) for sending.
 
 ### Email Client Setup Instructions
 
-The portal mailboxes page shows IMAP/SMTP setup instructions with copy buttons once mailboxes exist.
-This guides clients to configure Thunderbird, Outlook, iPhone Mail, etc.:
-- **IMAP**: mail.wenvia.global, port 993, SSL/TLS
-- **SMTP**: mail.wenvia.global, port 587, STARTTLS
+When a new mailbox is created, a welcome email is automatically sent to the new address with IMAP/SMTP
+setup instructions (`backend/src/mail/welcome.ts`). The portal mailboxes page also shows setup instructions
+with copy buttons once mailboxes exist. Settings are fetched dynamically from `/api/client-portal/mail-settings`
+(which reads `platform_settings`):
+- **IMAP**: `server.hostname`, port 993, SSL/TLS
+- **SMTP**: `server.hostname`, port 587, STARTTLS
 - **Username**: full email address
-- **Webmail**: mail.wenvia.global (browser access)
+- **Webmail**: `server.webmail_url` (browser access)
 
 ---
 
@@ -859,14 +893,19 @@ This guides clients to configure Thunderbird, Outlook, iPhone Mail, etc.:
 
 ```
 Browser -> Nginx (80/443)
-  server_name: <VPS_IP> or admin domain
+  server_name: wenvia.global (landing + admin)
+    -> /                     -> Frontend (8080) -> Landing page
+    -> /admin/*              -> Frontend (8080) -> Admin SPA
     -> /api/auth/*           -> Backend (3000) -> Admin auth
-    -> /api/client-portal/*  -> Backend (3000) -> Client auth + scoped data
     -> /api/*                -> Backend (3000) -> Admin routes -> PostgreSQL
-    -> /*                    -> Frontend (5173 dev / 8080 prod) -> React SPA
+
+  server_name: wpanel.wenvia.global (client portal)
+    -> /portal/*             -> Frontend (8080) -> Client Portal SPA
+    -> /api/client-portal/*  -> Backend (3000) -> Client auth + scoped data
 
   server_name: mail.wenvia.global (webmail)
     -> /*                    -> Roundcube (9000) -> Dovecot (IMAP)
+    -> /setup-help.html      -> Nginx -> static setup guide page
 ```
 
 ### Mail Flow (Incoming)
@@ -898,6 +937,7 @@ Admin creates client + plan -> Admin creates client_user (portal login)
   -> Client configures DNS at their registrar
   -> Client triggers verification -> DNS checked live
   -> Domain goes active -> Client creates mailboxes
+  -> Welcome email auto-sent to each new mailbox with IMAP/SMTP setup
 ```
 
 ### Worker Flow
@@ -970,6 +1010,8 @@ iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
 
 ### Authentication & Encryption
 - All web traffic over TLS (Let's Encrypt, auto-renewed)
+- SSL certs for three domains: wenvia.global, wpanel.wenvia.global, mail.wenvia.global
+- Postfix and Dovecot use Let's Encrypt certs (not snakeoil)
 - SMTP submission requires STARTTLS + auth (port 587)
 - IMAP over TLS only (port 993)
 - Admin passwords hashed with argon2
@@ -983,6 +1025,11 @@ iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
 - SPF — declares your VPS IP as authorized sender
 - DKIM — 2048-bit RSA keypair auto-generated per domain, Rspamd signs outgoing mail
 - DMARC — policy configured using platform's DMARC email from settings
+
+### SMTP Relay (Brevo)
+- Brevo SMTP relay configured as fallback for outbound delivery
+- Credentials stored in /etc/postfix/sasl_passwd
+- Currently commented out in main.cf (direct delivery active)
 
 ### Infrastructure Protection
 - UFW firewall — only ports 25, 80, 443, 587, 993 open
@@ -1036,7 +1083,7 @@ Production VPS (Ubuntu 22.04+)
 │   ├── redis:7-alpine
 │   ├── backend (custom image)
 │   ├── frontend (nginx + static build)
-│   └── roundcube
+│   └── roundcube (with roundcube-custom/ branding mounted)
 |
 └── Mail Storage
     └── /var/mail/vhosts/ (mounted volume)

@@ -11,6 +11,7 @@ import { NotFoundError, ConflictError, LimitExceededError, AppError } from "../.
 import { buildDnsInstructions } from "../settings/settings.service.js";
 import { hashPasswordForDovecot } from "../../lib/password.js";
 import { reloadPostfix, reloadDovecot } from "../../mail/postfix.js";
+import { sendWelcomeEmail } from "../../mail/welcome.js";
 import * as dnsService from "../domains/dns.service.js";
 import { nanoid } from "nanoid";
 import { generateKeyPairSync } from "node:crypto";
@@ -268,6 +269,11 @@ export async function portalRoutes(app: FastifyInstance) {
 
     await reloadPostfix();
     await reloadDovecot();
+
+    // Send welcome email with setup instructions (non-blocking)
+    const emailAddr = `${mailbox.localPart}@${domain.domainName}`;
+    sendWelcomeEmail(emailAddr, body.displayName ?? "").catch(() => {});
+
     return reply.status(201).send(mailbox);
   });
 
@@ -433,6 +439,20 @@ export async function portalRoutes(app: FastifyInstance) {
   // ==========================================
 
   // GET /api/client-portal/migration/info
+  // GET /api/client-portal/mail-settings — IMAP/SMTP/webmail info for client setup instructions
+  app.get("/mail-settings", async () => {
+    const { getSetting } = await import("../settings/settings.service.js");
+    const hostname = await getSetting("server.hostname");
+    const webmailUrl = await getSetting("server.webmail_url");
+
+    return {
+      hostname,
+      webmailUrl,
+      imap: { server: hostname, port: 993, security: "SSL/TLS" },
+      smtp: { server: hostname, port: 587, security: "STARTTLS" },
+    };
+  });
+
   app.get("/migration/info", async (request) => {
     const clientId = getClientId(request);
     const client = await getClientWithPlan(clientId);

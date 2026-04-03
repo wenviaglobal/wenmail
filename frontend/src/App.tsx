@@ -4,6 +4,9 @@ import { usePortalAuth } from "./hooks/use-portal-auth";
 import { Layout } from "./components/layout";
 import { PortalLayout } from "./components/portal-layout";
 
+// Landing page
+import { LandingPage } from "./pages/landing";
+
 // Admin pages
 import { LoginPage } from "./pages/login";
 import { DashboardPage } from "./pages/dashboard";
@@ -35,7 +38,7 @@ import { PortalGettingStartedPage } from "./pages/portal/getting-started";
 function AdminProtected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) return <Navigate to="/admin/login" replace />;
   return <>{children}</>;
 }
 
@@ -51,10 +54,18 @@ export function App() {
     <BrowserRouter>
       <Routes>
         {/* ============================== */}
-        {/* Admin routes */}
+        {/* Landing page */}
         {/* ============================== */}
-        <Route path="/login" element={<LoginPage />} />
+        <Route index element={<LandingPage />} />
+
+        {/* ============================== */}
+        {/* Admin routes (/admin) */}
+        {/* ============================== */}
+        <Route path="/admin/login" element={<LoginPage />} />
+        {/* Legacy redirect */}
+        <Route path="/login" element={<Navigate to="/admin/login" replace />} />
         <Route
+          path="/admin"
           element={
             <AdminProtected>
               <Layout />
@@ -77,7 +88,7 @@ export function App() {
         </Route>
 
         {/* ============================== */}
-        {/* Client Portal routes */}
+        {/* Client Portal routes (/portal) */}
         {/* ============================== */}
         <Route path="/portal/login" element={<PortalLoginPage />} />
         <Route

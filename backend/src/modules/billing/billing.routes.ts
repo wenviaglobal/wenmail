@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, desc, sql } from "drizzle-orm";
 import { authGuard } from "../auth/auth.guard.js";
 import { db } from "../../db/index.js";
-import { invoices, payments, clients, clientUsers } from "../../db/schema.js";
+import { invoices, payments, clients, clientUsers, passwordResetRequests } from "../../db/schema.js";
 import { NotFoundError } from "../../lib/errors.js";
 import { nanoid } from "nanoid";
 import { hashPassword } from "../../lib/password.js";
@@ -248,5 +248,62 @@ export async function billingRoutes(app: FastifyInstance) {
       pendingCount: pendingInvoices.count,
       overdueCount: overdueCount.count,
     };
+  });
+
+  // ==========================================
+  // Password Reset Requests (admin manages)
+  // ==========================================
+
+  // GET /api/admin/password-resets — list pending requests
+  app.get("/password-resets", async () => {
+    return db
+      .select({
+        id: passwordResetRequests.id,
+        email: passwordResetRequests.email,
+        status: passwordResetRequests.status,
+        clientName: clients.name,
+        clientId: passwordResetRequests.clientId,
+        createdAt: passwordResetRequests.createdAt,
+      })
+      .from(passwordResetRequests)
+      .innerJoin(clients, eq(passwordResetRequests.clientId, clients.id))
+      .orderBy(desc(passwordResetRequests.createdAt));
+  });
+
+  // PUT /api/admin/password-resets/:id — resolve a request (set new password)
+  app.put<{ Params: { id: string } }>("/password-resets/:id", async (request) => {
+    const { newPassword, notes } = z.object({
+      newPassword: z.string().min(8),
+      notes: z.string().optional(),
+    }).parse(request.body);
+
+    const [resetReq] = await db
+      .select()
+      .from(passwordResetRequests)
+      .where(eq(passwordResetRequests.id, request.params.id))
+      .limit(1);
+
+    if (!resetReq) throw new NotFoundError("Password reset request", request.params.id);
+
+    // Update client user password
+    const newHash = await hashPassword(newPassword);
+    await db
+      .update(clientUsers)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(clientUsers.id, resetReq.clientUserId));
+
+    // Mark request as completed
+    const admin = request.user as { id: string };
+    await db
+      .update(passwordResetRequests)
+      .set({
+        status: "completed",
+        resolvedBy: admin.id,
+        resolvedAt: new Date(),
+        notes: notes ?? null,
+      })
+      .where(eq(passwordResetRequests.id, request.params.id));
+
+    return { message: "Password reset completed" };
   });
 }

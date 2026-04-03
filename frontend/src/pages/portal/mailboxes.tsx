@@ -17,11 +17,23 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
+interface MailSettings {
+  hostname: string;
+  webmailUrl: string;
+  imap: { server: string; port: number; security: string };
+  smtp: { server: string; port: number; security: string };
+}
+
 export function PortalMailboxesPage() {
   const queryClient = useQueryClient();
   const [selectedDomain, setSelectedDomain] = useState<string>("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ localPart: "", password: "", displayName: "" });
+
+  const { data: mailSettings } = useQuery({
+    queryKey: ["mail-settings"],
+    queryFn: () => portalApi.get("mail-settings").json<MailSettings>(),
+  });
 
   const { data: domains = [] } = useQuery({
     queryKey: ["portal-domains"],
@@ -34,6 +46,8 @@ export function PortalMailboxesPage() {
     enabled: !!selectedDomain,
   });
 
+  const [createError, setCreateError] = useState<string>("");
+
   const createMutation = useMutation({
     mutationFn: () =>
       portalApi.post(`domains/${selectedDomain}/mailboxes`, { json: form }).json(),
@@ -41,6 +55,16 @@ export function PortalMailboxesPage() {
       queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] });
       setForm({ localPart: "", password: "", displayName: "" });
       setShowForm(false);
+      setCreateError("");
+    },
+    onError: async (err: unknown) => {
+      try {
+        const resp = err as { response?: { json: () => Promise<{ message?: string }> } };
+        const body = await resp.response?.json();
+        setCreateError(body?.message || "Failed to create mailbox");
+      } catch {
+        setCreateError("Failed to create mailbox. Check username and password (min 8 chars).");
+      }
     },
   });
 
@@ -91,7 +115,16 @@ export function PortalMailboxesPage() {
       </div>
 
       {showForm && selectedDomain && (
-        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6 space-y-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!form.localPart || !form.password || form.password.length < 8 || createMutation.isPending) return;
+            setCreateError("");
+            createMutation.mutate();
+          }}
+          className="bg-white border border-slate-200 rounded-lg p-4 mb-6 space-y-3"
+        >
           <div className="grid grid-cols-3 gap-3">
             <input placeholder="username" value={form.localPart} onChange={(e) => setForm({ ...form, localPart: e.target.value })}
               className="px-3 py-2 border border-slate-300 rounded-md text-sm" />
@@ -101,11 +134,18 @@ export function PortalMailboxesPage() {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="px-3 py-2 border border-slate-300 rounded-md text-sm" />
           </div>
-          <button onClick={() => createMutation.mutate()} disabled={!form.localPart || !form.password || createMutation.isPending}
+          {createError && (
+            <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{createError}</div>
+          )}
+          {form.password && form.password.length > 0 && form.password.length < 8 && (
+            <p className="text-xs text-amber-600">Password must be at least 8 characters</p>
+          )}
+          <button type="submit"
+            disabled={!form.localPart || !form.password || form.password.length < 8 || createMutation.isPending}
             className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">
             {createMutation.isPending ? "Creating..." : "Create Mailbox"}
           </button>
-        </div>
+        </form>
       )}
 
       {!selectedDomain ? (
@@ -135,10 +175,10 @@ export function PortalMailboxesPage() {
                 <div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-slate-500">URL</span>
-                    <CopyBtn text="mail.wenvia.global" />
+                    <CopyBtn text={mailSettings?.webmailUrl || mailSettings?.hostname || ""} />
                   </div>
                   <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm mt-1">
-                    mail.wenvia.global
+                    {mailSettings?.webmailUrl || mailSettings?.hostname || "Loading..."}
                   </code>
                 </div>
                 <p className="text-xs text-slate-400">Login with your full email and password</p>
@@ -180,19 +220,19 @@ export function PortalMailboxesPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-600">Server</span>
-                    <CopyBtn text="mail.wenvia.global" />
+                    <CopyBtn text={mailSettings?.imap.server || ""} />
                   </div>
-                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">mail.wenvia.global</code>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">{mailSettings?.imap.server || "Loading..."}</code>
 
                   <div className="flex justify-between items-center mt-2">
                     <span className="text-sm text-slate-600">Port</span>
-                    <CopyBtn text="993" />
+                    <CopyBtn text={String(mailSettings?.imap.port || 993)} />
                   </div>
-                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">993</code>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">{mailSettings?.imap.port || 993}</code>
 
                   <div className="mt-2">
                     <span className="text-sm text-slate-600">Security</span>
-                    <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm mt-1">SSL/TLS</code>
+                    <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm mt-1">{mailSettings?.imap.security || "SSL/TLS"}</code>
                   </div>
                 </div>
               </div>
@@ -203,19 +243,19 @@ export function PortalMailboxesPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-600">Server</span>
-                    <CopyBtn text="mail.wenvia.global" />
+                    <CopyBtn text={mailSettings?.smtp.server || ""} />
                   </div>
-                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">mail.wenvia.global</code>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">{mailSettings?.smtp.server || "Loading..."}</code>
 
                   <div className="flex justify-between items-center mt-2">
                     <span className="text-sm text-slate-600">Port</span>
-                    <CopyBtn text="587" />
+                    <CopyBtn text={String(mailSettings?.smtp.port || 587)} />
                   </div>
-                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">587</code>
+                  <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm">{mailSettings?.smtp.port || 587}</code>
 
                   <div className="mt-2">
                     <span className="text-sm text-slate-600">Security</span>
-                    <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm mt-1">STARTTLS</code>
+                    <code className="block bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm mt-1">{mailSettings?.smtp.security || "STARTTLS"}</code>
                   </div>
                 </div>
               </div>

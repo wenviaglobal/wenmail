@@ -16,16 +16,16 @@ import { cn } from "../lib/utils";
 import { logout } from "../api/auth";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", section: "main" },
-  { to: "/clients", icon: Users, label: "Clients", section: "main" },
-  { to: "/domains", icon: Globe, label: "Domains", section: "main" },
-  { to: "/mailboxes", icon: Mail, label: "Mailboxes", section: "main" },
-  { to: "/aliases", icon: ArrowRightLeft, label: "Aliases", section: "main" },
-  { to: "/logs/mail", icon: ScrollText, label: "Mail Logs", section: "logs" },
-  { to: "/logs/audit", icon: Shield, label: "Audit Logs", section: "logs" },
-  { to: "/billing", icon: CreditCard, label: "Billing", section: "admin" },
-  { to: "/server", icon: Activity, label: "Server Health", section: "admin" },
-  { to: "/settings", icon: Settings, label: "Settings", section: "admin" },
+  { to: "/admin", icon: LayoutDashboard, label: "Dashboard", section: "main" },
+  { to: "/admin/clients", icon: Users, label: "Clients", section: "main" },
+  { to: "/admin/domains", icon: Globe, label: "Domains", section: "main" },
+  { to: "/admin/mailboxes", icon: Mail, label: "Mailboxes", section: "main" },
+  { to: "/admin/aliases", icon: ArrowRightLeft, label: "Aliases", section: "main" },
+  { to: "/admin/logs/mail", icon: ScrollText, label: "Mail Logs", section: "logs" },
+  { to: "/admin/logs/audit", icon: Shield, label: "Audit Logs", section: "logs" },
+  { to: "/admin/billing", icon: CreditCard, label: "Billing", section: "admin" },
+  { to: "/admin/server", icon: Activity, label: "Server Health", section: "admin" },
+  { to: "/admin/settings", icon: Settings, label: "Settings", section: "admin" },
 ];
 
 export function Layout() {
@@ -34,7 +34,7 @@ export function Layout() {
       {/* Sidebar */}
       <aside className="w-60 bg-gray-900 text-white flex flex-col">
         <div className="p-4 border-b border-gray-700">
-          <h1 className="text-lg font-bold">MailPlatform</h1>
+          <h1 className="text-lg font-bold">WenMail</h1>
           <p className="text-xs text-gray-400">Admin Dashboard</p>
         </div>
 
@@ -43,7 +43,7 @@ export function Layout() {
             <NavLink
               key={to}
               to={to}
-              end={to === "/"}
+              end={to === "/admin"}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",

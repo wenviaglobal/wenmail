@@ -16,7 +16,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
 export function logout() {
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
-  window.location.href = "/login";
+  window.location.href = "/admin/login";
 }
 
 export async function getMe() {

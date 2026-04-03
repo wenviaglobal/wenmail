@@ -1,4 +1,4 @@
-# Project Dictionary — MailPlatform
+# Project Dictionary — WenMail
 
 > Quick-reference for every module, service, and component in the system.
 > Use `Ctrl+F` or grep to find any module instantly.
@@ -118,6 +118,7 @@ ORM:         Drizzle ORM (postgres-js driver, max 20 connections)
 | `dns_checks` | DNS verification history | id (bigserial), domain_id (FK), check_type, status, raw_result, checked_at |
 | `platform_settings` | Key-value config store | key (PK, varchar 100), value (text), label, group ('server'/'mail'/'branding'), updated_at |
 | `audit_log` | Admin action history | id (bigserial), actor_type, actor_id, action, target_type, target_id, details (JSONB), ip_address (inet) |
+| `password_reset_requests` | DB-based password reset (no email) | id (uuid), client_user_id (FK), client_id (FK), email, status ('pending'/'completed'/'rejected'), resolved_by (FK admins), resolved_at, notes, created_at |
 
 #### Unique Constraints
 
@@ -388,7 +389,7 @@ Default Settings (each with hint text for admin guidance):
   mail.postmaster_email      -> "postmaster@..."          (group: mail)    hint: bounce notifications
   mail.dmarc_email           -> "dmarc@..."               (group: mail)    hint: DMARC reports
   mail.max_attachment_mb     -> "25"                      (group: mail)    hint: attachment limit
-  branding.platform_name     -> "MailPlatform"            (group: branding) hint: shown in portal
+  branding.platform_name     -> "WenMail"                 (group: branding) hint: shown in portal
   branding.support_email     -> "support@..."             (group: branding) hint: support contact
 Functions:
   buildDnsInstructions(domain) -> returns step-by-step DNS records using live settings (hostname, IP, DMARC email)
@@ -410,6 +411,7 @@ Endpoints:
   POST   /api/client-portal/auth/refresh    -> exchange refreshToken (type="client-refresh") for new accessToken
   GET    /api/client-portal/auth/me          -> return current client user + client info (name, slug, status, billingStatus)
   PUT    /api/client-portal/auth/password    -> change password (requires currentPassword + newPassword)
+  POST   /api/client-portal/auth/forgot-password -> submit password reset request (public, no auth — creates pending record for admin)
 Guard Checks:
   - Token must have type="client"
   - User status must be "active"
@@ -442,7 +444,16 @@ Endpoints:
   DELETE /api/client-portal/aliases/:id                  -> delete alias (hard delete, reloads Postfix)
   GET    /api/client-portal/logs                         -> client's mail logs (paginated, scoped to their domains)
   GET    /api/client-portal/billing                      -> client's invoices + payments
+  GET    /api/client-portal/mail-settings                -> IMAP/SMTP/webmail settings (hostname, ports, security — from platform_settings)
   GET    /api/client-portal/migration/info               -> import/export instructions (IMAP sync, Maildir export, MBOX export)
+```
+
+### Module: billing (Admin) — Password Resets
+```
+Location:    backend/src/modules/billing/
+Endpoints (additional, registered alongside billing routes):
+  GET    /api/admin/password-resets        -> list all password reset requests (pending/completed/rejected)
+  PUT    /api/admin/password-resets/:id    -> resolve a request (admin sets new password, marks completed/rejected)
 ```
 
 ### Background Workers (BullMQ)
@@ -479,6 +490,8 @@ Files:
   dovecot.ts      -> recalcQuota(email) — runs `doveadm quota recalc`
                   -> kickUser(email) — runs `doveadm kick` (disconnect sessions)
                   -> getMailboxStats(email) — runs `doveadm mailbox status`
+  welcome.ts      -> sendWelcomeEmail(to, displayName, domain) — sends setup instructions (IMAP/SMTP config)
+                     to newly created mailboxes via local Postfix
 ```
 
 ### Seed Script
@@ -526,7 +539,10 @@ Location:    backend/src/db/
 Type:        backend (database)
 Files:
   index.ts        -> Drizzle ORM instance (postgres-js driver, max 20 connections)
-  schema.ts       -> all table definitions (13 tables) + relations
+  schema.ts       -> all table definitions (14 tables) + relations
+  migrations/
+    0001_*.sql                 -> initial schema
+    0002_fuzzy_chimera.sql     -> adds password_reset_requests table
 ```
 
 ### Build & Config Files
@@ -556,23 +572,25 @@ Description: React root render, TanStack Query provider setup
 Location:    frontend/src/App.tsx
 Type:        frontend
 Description: React Router v7 routes — AdminProtected wrapper for admin, PortalProtected wrapper for portal
-Admin Routes (inside Layout, requires AdminProtected):
-  /login                       -> LoginPage (public)
-  / (index)                    -> DashboardPage
-  /clients                     -> ClientListPage
-  /clients/:id                 -> ClientDetailPage
-  /clients/:id/controls        -> ClientControlsPage
-  /domains                     -> DomainListPage
-  /domains/:id                 -> DomainDetailPage
-  /mailboxes                   -> MailboxListPage
-  /aliases                     -> AliasListPage
-  /logs/mail                   -> MailLogsPage
-  /logs/audit                  -> AuditLogsPage
-  /billing                     -> AdminBillingPage
-  /server                      -> ServerHealthPage
-  /settings                    -> AdminSettingsPage
+Public Routes:
+  /                            -> LandingPage (product landing with features, pricing, 3-step guide)
+Admin Routes (inside Layout, requires AdminProtected, all under /admin prefix):
+  /admin/login                 -> LoginPage (public)
+  /admin (index)               -> DashboardPage
+  /admin/clients               -> ClientListPage
+  /admin/clients/:id           -> ClientDetailPage
+  /admin/clients/:id/controls  -> ClientControlsPage
+  /admin/domains               -> DomainListPage
+  /admin/domains/:id           -> DomainDetailPage
+  /admin/mailboxes             -> MailboxListPage
+  /admin/aliases               -> AliasListPage
+  /admin/logs/mail             -> MailLogsPage
+  /admin/logs/audit            -> AuditLogsPage
+  /admin/billing               -> AdminBillingPage
+  /admin/server                -> ServerHealthPage
+  /admin/settings              -> AdminSettingsPage
 Client Portal Routes (inside PortalLayout, requires PortalProtected):
-  /portal/login                -> PortalLoginPage (public)
+  /portal/login                -> PortalLoginPage (public, includes "Forgot Password?" flow)
   /portal (index)              -> PortalDashboardPage
   /portal/getting-started      -> PortalGettingStartedPage
   /portal/domains              -> PortalDomainsPage
@@ -584,12 +602,19 @@ Client Portal Routes (inside PortalLayout, requires PortalProtected):
   /portal/migration            -> PortalMigrationPage
 ```
 
+### Page: Landing
+```
+Location:    frontend/src/pages/landing.tsx
+Type:        frontend
+Description: Public landing page at / — product features, pricing overview, 3-step setup guide
+```
+
 ### Page: Login
 ```
 Location:    frontend/src/pages/login.tsx
 Type:        frontend
 Depends On:  POST /api/auth/login
-Description: Admin login page
+Description: Admin login page (now at /admin/login)
 ```
 
 ### Page: Dashboard
@@ -718,7 +743,7 @@ Location:    frontend/src/api/
 Type:        frontend (shared)
 Description: HTTP client and per-resource API functions using ky
 Files:
-  client.ts         -> ky instance (prefixUrl: "/api", auto Bearer token from localStorage, 401 redirect to /login)
+  client.ts         -> ky instance (prefixUrl: "/api", auto Bearer token from localStorage, 401 redirect to /admin/login)
   auth.ts           -> login, logout, refresh API calls
   clients.ts        -> client CRUD API calls
   domains.ts        -> domain CRUD + verify + dns-status + dns-guide API calls (DnsGuide, DnsRecord types)
@@ -763,7 +788,7 @@ Exports:     portalApi instance, PortalUser type, PortalDashboard type, portalLo
 Location:    frontend/src/pages/portal/
 Type:        frontend
 Files:
-  login.tsx           -> client portal login form
+  login.tsx           -> client portal login form (includes "Forgot Password?" flow)
   dashboard.tsx       -> client overview — domain/mailbox/alias counts, plan limits, quick actions
   getting-started.tsx -> onboarding guide — steps to set up first domain and mailbox
   domains.tsx         -> manage client's own domains (add, verify, view status)
@@ -857,6 +882,24 @@ Structure:
 
 ---
 
+## Roundcube Customization
+
+### Custom Branding
+```
+Location:    roundcube-custom/
+Type:        config (branding)
+Used By:     Roundcube Docker container (volume-mounted)
+Description: WenMail branding for webmail — logos, CSS, config overrides, setup help page
+Files:
+  logo.svg             -> WenMail logo (light mode)
+  logo-dark.svg        -> WenMail logo (dark mode)
+  custom.css           -> glossy indigo theme (light + dark mode), watermark removed
+  custom-config.php    -> product_name = "WenMail", support link -> /setup-help.html
+  setup-help.html      -> email client setup guide, served via Nginx at mail.wenvia.global/setup-help.html
+```
+
+---
+
 ## Root Config Files
 
 ```
@@ -866,6 +909,7 @@ Files:
   .env.example        -> root environment variables (DB_PASSWORD, JWT_SECRET, PLATFORM_DOMAIN, NODE_ENV)
   .gitignore          -> git ignore rules
   docs/               -> ARCHITECTURE.md, PROJECT_DICTIONARY.md, PROJECT_VISION.md
+  roundcube-custom/   -> WenMail branding for Roundcube (logos, CSS, config, setup-help page)
 ```
 
 ---
@@ -894,7 +938,7 @@ backend/
       env.ts                            -> Zod-validated environment variables
     db/
       index.ts                          -> Drizzle ORM instance (postgres-js)
-      schema.ts                         -> all 13 table definitions + relations
+      schema.ts                         -> all 14 table definitions + relations
     lib/
       errors.ts                         -> AppError + typed subclasses
       logger.ts                         -> pino logger
@@ -903,6 +947,7 @@ backend/
     mail/
       postfix.ts                        -> reloadPostfix(), reloadDovecot()
       dovecot.ts                        -> recalcQuota(), kickUser(), getMailboxStats()
+      welcome.ts                        -> sendWelcomeEmail() — IMAP/SMTP setup instructions to new mailboxes
     modules/
       auth/
         auth.routes.ts                  -> login, refresh, me
@@ -980,7 +1025,8 @@ frontend/
     lib/
       utils.ts                          -> cn() (clsx + tailwind-merge)
     pages/
-      login.tsx                         -> admin login form
+      landing.tsx                       -> public landing page (features, pricing, 3-step guide)
+      login.tsx                         -> admin login form (at /admin/login)
       dashboard.tsx                     -> admin overview stats page
       admin/
         billing.tsx                     -> platform billing dashboard (invoices, payments, revenue)
@@ -1002,7 +1048,7 @@ frontend/
         mail.tsx                        -> filterable mail log table
         audit.tsx                       -> admin audit trail
       portal/
-        login.tsx                       -> client portal login form
+        login.tsx                       -> client portal login form (with forgot password flow)
         dashboard.tsx                   -> client overview (counts, plan limits, quick actions)
         getting-started.tsx             -> onboarding guide (first domain + mailbox setup)
         domains.tsx                     -> client domain management (add, verify, view)
@@ -1012,6 +1058,12 @@ frontend/
         logs.tsx                        -> client's own mail logs
         billing.tsx                     -> client invoice + payment history
         migration.tsx                   -> import/export information
+roundcube-custom/
+  logo.svg                              -> WenMail logo (light mode)
+  logo-dark.svg                         -> WenMail logo (dark mode)
+  custom.css                            -> glossy indigo theme (light + dark)
+  custom-config.php                     -> product_name, support link config
+  setup-help.html                       -> email client setup guide page
 ```
 
 ---

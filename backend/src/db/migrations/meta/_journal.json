@@ -15,6 +15,13 @@
       "when": 1775041946188,
       "tag": "0001_graceful_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775202003075,
+      "tag": "0002_fuzzy_chimera",
+      "breakpoints": true
     }
   ]
 }

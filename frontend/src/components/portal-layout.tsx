@@ -22,7 +22,7 @@ export function PortalLayout() {
     <div className="flex h-screen">
       <aside className="w-60 bg-slate-800 text-white flex flex-col">
         <div className="p-4 border-b border-slate-600">
-          <h1 className="text-lg font-bold">MailPlatform</h1>
+          <h1 className="text-lg font-bold">WenMail</h1>
           <p className="text-xs text-slate-400 truncate">{user?.clientName ?? "Client Portal"}</p>
         </div>
 

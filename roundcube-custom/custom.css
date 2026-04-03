@@ -1,0 +1,171 @@
+/* ==========================================
+   WenMail — Glossy Theme Override
+   ========================================== */
+
+/* --- Light Mode: Glossy --- */
+
+/* Header / toolbar — glossy indigo gradient */
+#layout > .header,
+.header.toolbar {
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 40%, #4338ca 100%) !important;
+  border-bottom: 1px solid #3730a3 !important;
+  box-shadow: 0 2px 8px rgba(67, 56, 202, 0.3), inset 0 1px 0 rgba(255,255,255,0.15) !important;
+}
+
+/* Sidebar — subtle glossy slate */
+#layout-sidebar,
+#layout > .sidebar {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%) !important;
+  border-right: 1px solid #cbd5e1 !important;
+}
+
+/* Folder list active item */
+.folderlist li.selected > a,
+.listing li.selected,
+.listing tr.selected td {
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%) !important;
+  color: white !important;
+  border-radius: 6px !important;
+}
+
+/* Buttons — glossy indigo */
+.btn-primary,
+a.button.primary,
+input.button.mainaction,
+button.btn.btn-primary {
+  background: linear-gradient(180deg, #818cf8 0%, #6366f1 40%, #4f46e5 100%) !important;
+  border: 1px solid #4338ca !important;
+  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.3), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+  color: white !important;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.15) !important;
+}
+
+.btn-primary:hover,
+a.button.primary:hover,
+button.btn.btn-primary:hover {
+  background: linear-gradient(180deg, #a5b4fc 0%, #818cf8 40%, #6366f1 100%) !important;
+}
+
+/* Message list — subtle row hover */
+.messagelist tr:hover td {
+  background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%) !important;
+}
+
+/* Login page background */
+#login-form {
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08) !important;
+}
+
+body.login-page,
+#layout-login {
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 30%, #c7d2fe 70%, #a5b4fc 100%) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Card-like panels */
+#layout > div {
+  border-radius: 0 !important;
+}
+
+/* Compose toolbar */
+#compose-toolbar {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+/* --- Dark Mode: Glossy Dark --- */
+@media (prefers-color-scheme: dark) {
+  /* Override dark mode header */
+  #layout > .header,
+  .header.toolbar {
+    background: linear-gradient(180deg, #312e81 0%, #1e1b4b 40%, #0f0e2a 100%) !important;
+    border-bottom: 1px solid #4338ca !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(99,102,241,0.2) !important;
+  }
+
+  /* Dark sidebar */
+  #layout-sidebar,
+  #layout > .sidebar {
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%) !important;
+    border-right: 1px solid #334155 !important;
+  }
+
+  /* Dark body */
+  body,
+  #layout,
+  #layout > .content {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+  }
+
+  /* Dark login */
+  body.login-page,
+  #layout-login {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%) !important;
+  }
+
+  #login-form {
+    background: #1e293b !important;
+    border: 1px solid #334155 !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+  }
+
+  /* Dark buttons */
+  .btn-primary,
+  a.button.primary,
+  button.btn.btn-primary {
+    background: linear-gradient(180deg, #6366f1 0%, #4f46e5 40%, #4338ca 100%) !important;
+    border: 1px solid #312e81 !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(165,180,252,0.15) !important;
+  }
+
+  /* Dark folder selection */
+  .folderlist li.selected > a,
+  .listing li.selected,
+  .listing tr.selected td {
+    background: linear-gradient(180deg, #4f46e5 0%, #4338ca 100%) !important;
+  }
+
+  /* Dark message hover */
+  .messagelist tr:hover td {
+    background: linear-gradient(180deg, #1e293b 0%, #1e1b4b 100%) !important;
+  }
+
+  /* Dark scrollbar */
+  ::-webkit-scrollbar-thumb {
+    background: #475569;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
+}
+
+/* Hide Roundcube branding footer */
+.watermark,
+#message-footer .roundcube-link,
+a[href*="roundcube.net"] {
+  display: none !important;
+}
+
+/* Remove "Roundcube Webmail" text wherever it appears */
+.login-title {
+  font-size: 0 !important;
+}
+.login-title::after {
+  content: "WenMail" !important;
+  font-size: 24px !important;
+  font-weight: 700 !important;
+  color: #4f46e5 !important;
+}

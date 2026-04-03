@@ -57,11 +57,13 @@ export function PortalDomainsPage() {
         <div className="flex items-center gap-3">
           <Link to={`/portal/domains/${d.id}/dns-setup`}
             className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
-            <BookOpen size={12} /> DNS Guide
+            <BookOpen size={12} /> DNS Config
           </Link>
           <button onClick={() => verifyMutation.mutate(d.id)}
-            className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
-            <RefreshCw size={12} /> Verify
+            disabled={verifyMutation.isPending}
+            className="text-xs text-indigo-600 hover:underline flex items-center gap-1 disabled:opacity-50">
+            <RefreshCw size={12} className={verifyMutation.isPending && verifyMutation.variables === d.id ? "animate-spin" : ""} />
+            {verifyMutation.isPending && verifyMutation.variables === d.id ? "Verifying..." : "Verify"}
           </button>
         </div>
       ),

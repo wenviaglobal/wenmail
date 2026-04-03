@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Email Setup Guide - WenMail</title>
+<style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; color: #334155; background: #f8fafc; }
+  h1 { color: #4f46e5; font-size: 24px; margin-bottom: 8px; }
+  h2 { color: #1e293b; font-size: 18px; margin-top: 28px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
+  .setting { display: flex; justify-content: space-between; padding: 8px 12px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; margin: 6px 0; font-size: 14px; }
+  .setting .label { color: #64748b; }
+  .setting .value { font-family: monospace; font-weight: 600; color: #1e1b4b; }
+  .note { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 13px; color: #4338ca; }
+  .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .app { background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>Email Setup Guide</h1>
+  <p style="color: #64748b; margin-bottom: 24px;">Configure your email client to access your WenMail account.</p>
+
+  <h2>Incoming Mail (IMAP)</h2>
+  <div class="setting"><span class="label">Server</span><span class="value">mail.wenvia.global</span></div>
+  <div class="setting"><span class="label">Port</span><span class="value">993</span></div>
+  <div class="setting"><span class="label">Security</span><span class="value">SSL/TLS</span></div>
+  <div class="setting"><span class="label">Username</span><span class="value">your full email address</span></div>
+
+  <h2>Outgoing Mail (SMTP)</h2>
+  <div class="setting"><span class="label">Server</span><span class="value">mail.wenvia.global</span></div>
+  <div class="setting"><span class="label">Port</span><span class="value">587</span></div>
+  <div class="setting"><span class="label">Security</span><span class="value">STARTTLS</span></div>
+  <div class="setting"><span class="label">Username</span><span class="value">your full email address</span></div>
+
+  <div class="note">
+    <strong>Password:</strong> Use the same password you use to log in to this webmail.
+  </div>
+
+  <h2>Compatible Apps</h2>
+  <div class="apps">
+    <div class="app">Thunderbird</div>
+    <div class="app">Microsoft Outlook</div>
+    <div class="app">Apple Mail</div>
+    <div class="app">Gmail App</div>
+    <div class="app">Outlook Mobile</div>
+    <div class="app">iPhone Mail</div>
+  </div>
+
+  <div class="note" style="margin-top: 24px;">
+    <strong>Need help?</strong> Contact your organization's administrator for assistance.
+  </div>
+</body>
+</html>

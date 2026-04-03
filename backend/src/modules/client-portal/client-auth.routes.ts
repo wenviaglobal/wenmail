@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { clientUsers, clients } from "../../db/schema.js";
+import { clientUsers, clients, passwordResetRequests } from "../../db/schema.js";
 import { verifyPassword, hashPassword } from "../../lib/password.js";
 import { AppError } from "../../lib/errors.js";
 import { clientAuthGuard } from "./client-auth.guard.js";
@@ -90,6 +90,40 @@ export async function clientAuthRoutes(app: FastifyInstance) {
         clientName: user.clientName,
       },
     };
+  });
+
+  // POST /api/client-portal/auth/forgot-password (public — no auth needed)
+  app.post("/forgot-password", async (request) => {
+    const { email } = z.object({ email: z.string().email() }).parse(request.body);
+
+    const [user] = await db
+      .select({ id: clientUsers.id, clientId: clientUsers.clientId, email: clientUsers.email })
+      .from(clientUsers)
+      .where(eq(clientUsers.email, email.toLowerCase()))
+      .limit(1);
+
+    // Always return success (don't reveal if email exists)
+    if (!user) return { message: "If an account exists with that email, a reset request has been submitted." };
+
+    // Check for existing pending request
+    const [existing] = await db
+      .select({ id: passwordResetRequests.id })
+      .from(passwordResetRequests)
+      .where(and(
+        eq(passwordResetRequests.clientUserId, user.id),
+        eq(passwordResetRequests.status, "pending"),
+      ))
+      .limit(1);
+
+    if (!existing) {
+      await db.insert(passwordResetRequests).values({
+        clientUserId: user.id,
+        clientId: user.clientId,
+        email: user.email,
+      });
+    }
+
+    return { message: "If an account exists with that email, a reset request has been submitted." };
   });
 
   // POST /api/client-portal/auth/refresh

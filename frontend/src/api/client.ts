@@ -16,7 +16,7 @@ export const api = ky.create({
         if (response.status === 401) {
           localStorage.removeItem("accessToken");
           localStorage.removeItem("refreshToken");
-          window.location.href = "/login";
+          window.location.href = "/admin/login";
         }
       },
     ],
