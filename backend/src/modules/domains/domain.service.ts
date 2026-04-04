@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { generateKeyPairSync } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import { logAudit } from "../../lib/audit.js";
+import { encrypt, decrypt } from "../../lib/crypto.js";
 import { db } from "../../db/index.js";
 import { domains, dnsChecks, clients, plans } from "../../db/schema.js";
 import { NotFoundError, ConflictError, LimitExceededError } from "../../lib/errors.js";
@@ -63,8 +64,8 @@ export async function createDomain(clientId: string, domainName: string) {
       clientId,
       domainName: domainName.toLowerCase(),
       verificationToken,
-      dkimPrivateKey: privateKey,
-      dkimPublicKey: publicKey,
+      dkimPrivateKey: encrypt(privateKey),
+      dkimPublicKey: publicKey, // Public key stays plaintext (it's public)
     })
     .returning();
 
@@ -72,7 +73,7 @@ export async function createDomain(clientId: string, domainName: string) {
   try {
     await mkdir("/var/mail/dkim", { recursive: true });
     const keyPath = `/var/mail/dkim/${domainName.toLowerCase()}.${domain.dkimSelector || "mail"}.key`;
-    await writeFile(keyPath, privateKey, { mode: 0o640 });
+    await writeFile(keyPath, decrypt(domain.dkimPrivateKey!), { mode: 0o640 });
   } catch {
     // Non-fatal in dev — Rspamd may not be running
   }

@@ -78,7 +78,8 @@ export async function buildApp() {
   });
 
   // Health check
-  app.get("/api/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
+  app.get("/api/health", async () => ({ status: "ok", timestamp: new Date().toISOString(), version: "v1" }));
+  app.get("/api/v1/health", async () => ({ status: "ok", timestamp: new Date().toISOString(), version: "v1" }));
 
   // ==========================================
   // Admin routes (JWT with admin role)

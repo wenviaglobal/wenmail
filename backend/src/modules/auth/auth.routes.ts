@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticateAdmin } from "./auth.service.js";
 import { authGuard } from "./auth.guard.js";
+import { redis } from "../../lib/redis.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -48,6 +49,19 @@ export async function authRoutes(app: FastifyInstance) {
     } catch {
       return reply.status(401).send({ error: "Invalid refresh token" });
     }
+  });
+
+  // POST /api/auth/logout — revoke token
+  app.post("/logout", { preHandler: [authGuard] }, async (request) => {
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    if (token) {
+      try {
+        await redis.set(`revoked:${token}`, "1", "EX", 900); // 15min (matches access token TTL)
+      } catch {
+        // Redis unavailable — token will expire naturally
+      }
+    }
+    return { message: "Logged out" };
   });
 
   // GET /api/auth/me

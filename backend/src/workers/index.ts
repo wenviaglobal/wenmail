@@ -25,11 +25,12 @@ export async function startWorkers() {
   }
 
   // Only import BullMQ modules if Redis is new enough
-  const { initQueues, getDnsCheckQueue, getQuotaSyncQueue, getLogCleanupQueue } = await import("./queues.js");
+  const { initQueues, getDnsCheckQueue, getQuotaSyncQueue, getLogCleanupQueue, getDkimRotationQueue } = await import("./queues.js");
   const { createDnsCheckWorker } = await import("./dns-check.worker.js");
   const { createQuotaSyncWorker } = await import("./quota-sync.worker.js");
   const { createLogCleanupWorker } = await import("./log-cleanup.worker.js");
   const { createDomainSetupWorker } = await import("./domain-setup.worker.js");
+  const { createDkimRotationWorker } = await import("./dkim-rotation.worker.js");
 
   initQueues();
 
@@ -37,14 +38,17 @@ export async function startWorkers() {
   const quotaWorker = createQuotaSyncWorker();
   const logWorker = createLogCleanupWorker();
   const domainWorker = createDomainSetupWorker();
+  const dkimWorker = createDkimRotationWorker();
 
   const dnsQ = getDnsCheckQueue();
   const quotaQ = getQuotaSyncQueue();
   const logQ = getLogCleanupQueue();
+  const dkimQ = getDkimRotationQueue();
 
   if (dnsQ) await dnsQ.upsertJobScheduler("dns-check-hourly", { pattern: "0 * * * *" });
   if (quotaQ) await quotaQ.upsertJobScheduler("quota-sync-6h", { pattern: "0 */6 * * *" });
   if (logQ) await logQ.upsertJobScheduler("log-cleanup-daily", { pattern: "0 3 * * *" });
+  if (dkimQ) await dkimQ.upsertJobScheduler("dkim-rotation-weekly", { pattern: "0 4 * * 0" }); // Sunday 4 AM
 
   logger.info("All workers started and schedules registered");
   return { dnsWorker, quotaWorker, logWorker, domainWorker };

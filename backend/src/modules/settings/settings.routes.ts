@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { authGuard } from "../auth/auth.guard.js";
+import { authGuard, requireRole } from "../auth/auth.guard.js";
 import * as settingsService from "./settings.service.js";
 
 export async function settingsRoutes(app: FastifyInstance) {
@@ -11,8 +11,8 @@ export async function settingsRoutes(app: FastifyInstance) {
     return settingsService.getAllSettings();
   });
 
-  // PUT /api/admin/settings — update settings
-  app.put("/", async (request) => {
+  // PUT /api/admin/settings — update settings (superadmin only)
+  app.put("/", { preHandler: [requireRole("superadmin")] }, async (request) => {
     const body = z.record(z.string(), z.string()).parse(request.body);
     await settingsService.updateSettings(body);
     return { message: "Settings updated", updated: Object.keys(body) };
