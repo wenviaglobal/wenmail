@@ -13,6 +13,7 @@ import { hashPasswordForDovecot } from "../../lib/password.js";
 import { reloadPostfix, reloadDovecot } from "../../mail/postfix.js";
 import { sendWelcomeEmail } from "../../mail/welcome.js";
 import * as dnsService from "../domains/dns.service.js";
+import { logger } from "../../lib/logger.js";
 import { nanoid } from "nanoid";
 import { generateKeyPairSync } from "node:crypto";
 import { env } from "../../config/env.js";
@@ -241,12 +242,12 @@ export async function portalRoutes(app: FastifyInstance) {
     });
     if (!domain) throw new NotFoundError("Domain", request.params.domainId);
 
-    // Check plan limit
+    // Check plan limit (only count active mailboxes)
     const maxMailboxes = client.maxMailboxOverride ?? client.plan?.maxMailboxes ?? 50;
     const [count] = await db
       .select({ count: sql<number>`COUNT(*)` })
       .from(mailboxes)
-      .where(eq(mailboxes.clientId, clientId));
+      .where(and(eq(mailboxes.clientId, clientId), eq(mailboxes.status, "active")));
     if (count.count >= maxMailboxes) throw new LimitExceededError("Mailboxes", maxMailboxes);
 
     // Check uniqueness
@@ -302,7 +303,7 @@ export async function portalRoutes(app: FastifyInstance) {
     return mailbox;
   });
 
-  // DELETE /api/client-portal/mailboxes/:id
+  // DELETE /api/client-portal/mailboxes/:id — soft disable
   app.delete<{ Params: { id: string } }>("/mailboxes/:id", async (request) => {
     const clientId = getClientId(request);
     const [mailbox] = await db.update(mailboxes)
@@ -313,6 +314,38 @@ export async function portalRoutes(app: FastifyInstance) {
     await reloadPostfix();
     await reloadDovecot();
     return mailbox;
+  });
+
+  // DELETE /api/client-portal/mailboxes/:id/permanent — hard delete (only disabled mailboxes)
+  app.delete<{ Params: { id: string } }>("/mailboxes/:id/permanent", async (request) => {
+    const clientId = getClientId(request);
+
+    // Only allow permanent delete of disabled mailboxes
+    const mailbox = await db.query.mailboxes.findFirst({
+      where: and(eq(mailboxes.id, request.params.id), eq(mailboxes.clientId, clientId)),
+      with: { domain: true },
+    });
+    if (!mailbox) throw new NotFoundError("Mailbox", request.params.id);
+    if (mailbox.status !== "disabled") {
+      throw new AppError(400, "Only disabled mailboxes can be permanently deleted. Disable it first.", "MAILBOX_NOT_DISABLED");
+    }
+
+    // Hard delete from DB
+    await db.delete(mailboxes).where(eq(mailboxes.id, request.params.id));
+
+    // Remove maildir from disk (non-blocking)
+    const emailAddr = `${mailbox.localPart}@${mailbox.domain.domainName}`;
+    const maildir = `/var/mail/vhosts/${mailbox.domain.domainName}/${mailbox.localPart}`;
+    import("node:child_process").then(({ exec }) => {
+      exec(`rm -rf ${maildir}`, (err) => {
+        if (err) logger.warn({ maildir, err }, "Failed to remove maildir");
+        else logger.info({ emailAddr }, "Maildir removed");
+      });
+    });
+
+    await reloadPostfix();
+    await reloadDovecot();
+    return { message: `Mailbox ${emailAddr} permanently deleted` };
   });
 
   // ==========================================

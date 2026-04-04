@@ -68,4 +68,18 @@ export const adminApi = {
 
   // Billing overview
   billingOverview: () => api.get("admin/billing/overview").json<BillingOverview>(),
+
+  // Password reset requests
+  listPasswordResets: () => api.get("admin/password-resets").json<PasswordResetRequest[]>(),
+  resolvePasswordReset: (id: string, data: { newPassword: string; notes?: string }) =>
+    api.put(`admin/password-resets/${id}`, { json: data }).json(),
 };
+
+export interface PasswordResetRequest {
+  id: string;
+  email: string;
+  status: string;
+  clientName: string;
+  clientId: string;
+  createdAt: string;
+}

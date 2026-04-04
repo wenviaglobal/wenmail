@@ -6,19 +6,20 @@ interface QuotaBarProps {
   label?: string;
 }
 
+function formatStorage(mb: number): string {
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb} MB`;
+}
+
 export function QuotaBar({ used, total, label }: QuotaBarProps) {
   const percent = total > 0 ? Math.min((used / total) * 100, 100) : 0;
 
   return (
-    <div className="w-full">
-      {label && (
-        <div className="flex justify-between text-xs text-gray-500 mb-1">
-          <span>{label}</span>
-          <span>
-            {used} / {total} MB
-          </span>
-        </div>
-      )}
+    <div className="w-full min-w-[120px]">
+      <div className="flex justify-between text-xs text-gray-500 mb-1">
+        <span>{label ?? `${percent.toFixed(0)}% Used`}</span>
+        <span>{formatStorage(used)} / {formatStorage(total)}</span>
+      </div>
       <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
         <div
           className={cn(
@@ -29,7 +30,7 @@ export function QuotaBar({ used, total, label }: QuotaBarProps) {
                 ? "bg-yellow-500"
                 : "bg-blue-500",
           )}
-          style={{ width: `${percent}%` }}
+          style={{ width: `${Math.max(percent, 1)}%` }}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 /**
- * Seed script — creates initial admin user and a starter plan.
+ * Seed script — creates initial admin user and plans.
  * Run: npx tsx src/seed.ts
  */
 import { db } from "./db/index.js";
@@ -9,73 +9,33 @@ import { hashPassword } from "./lib/password.js";
 async function seed() {
   console.log("Seeding database...\n");
 
-  // 1. Create default plans
-  const [starterPlan] = await db.insert(plans).values({
-    name: "Starter",
-    maxDomains: 1,
-    maxMailboxes: 50,
-    maxAliases: 100,
-    storagePerMailboxMb: 500,
-    maxSendPerDay: 500,
-    priceMonthly: "0",
-  }).onConflictDoNothing().returning();
+  // 1. Create plans
+  const planData = [
+    { name: "Starter", maxDomains: 1, maxMailboxes: 25, maxAliases: 50, storagePerMailboxMb: 500, maxSendPerDay: 300, priceMonthly: "0", isInternal: false },
+    { name: "Standard", maxDomains: 3, maxMailboxes: 100, maxAliases: 200, storagePerMailboxMb: 1024, maxSendPerDay: 1000, priceMonthly: "14.99", isInternal: false },
+    { name: "Premium", maxDomains: 10, maxMailboxes: 500, maxAliases: 1000, storagePerMailboxMb: 5120, maxSendPerDay: 5000, priceMonthly: "49.99", isInternal: false },
+    { name: "Demo", maxDomains: 999, maxMailboxes: 9999, maxAliases: 9999, storagePerMailboxMb: 51200, maxSendPerDay: 99999, priceMonthly: "0", isInternal: true },
+  ];
 
-  const [businessPlan] = await db.insert(plans).values({
-    name: "Business",
-    maxDomains: 5,
-    maxMailboxes: 200,
-    maxAliases: 500,
-    storagePerMailboxMb: 2000,
-    maxSendPerDay: 2000,
-    priceMonthly: "29.99",
-  }).onConflictDoNothing().returning();
-
-  console.log("Plans created:", starterPlan?.name, businessPlan?.name);
+  for (const p of planData) {
+    const [plan] = await db.insert(plans).values(p).onConflictDoNothing().returning();
+    if (plan) console.log(`  Plan created: ${plan.name}`);
+  }
 
   // 2. Create super admin
   const adminPassword = await hashPassword("admin123456");
   const [admin] = await db.insert(admins).values({
-    email: "admin@mailplatform.com",
+    email: "admin@wenvia.global",
     passwordHash: adminPassword,
     role: "superadmin",
   }).onConflictDoNothing().returning();
 
   if (admin) {
-    console.log("Admin created:");
-    console.log("  Email:    admin@mailplatform.com");
+    console.log("\nAdmin created:");
+    console.log("  Email:    admin@wenvia.global");
     console.log("  Password: admin123456");
   } else {
-    console.log("Admin already exists (skipped)");
-  }
-
-  // 3. Create a demo client
-  if (starterPlan) {
-    const [demoClient] = await db.insert(clients).values({
-      name: "Demo Company",
-      slug: "demo-company",
-      contactEmail: "contact@democompany.com",
-      planId: starterPlan.id,
-    }).onConflictDoNothing().returning();
-
-    if (demoClient) {
-      console.log("\nDemo client created: Demo Company");
-
-      // Create a portal user for the demo client
-      const clientPassword = await hashPassword("client123456");
-      const [portalUser] = await db.insert(clientUsers).values({
-        clientId: demoClient.id,
-        email: "user@democompany.com",
-        passwordHash: clientPassword,
-        name: "Demo User",
-        role: "owner",
-      }).onConflictDoNothing().returning();
-
-      if (portalUser) {
-        console.log("Portal user created:");
-        console.log("  Email:    user@democompany.com");
-        console.log("  Password: client123456");
-      }
-    }
+    console.log("\nAdmin already exists (skipped)");
   }
 
   console.log("\nSeed complete!");

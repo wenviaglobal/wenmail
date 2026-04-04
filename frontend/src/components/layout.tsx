@@ -10,6 +10,7 @@ import {
   CreditCard,
   Activity,
   Settings,
+  KeyRound,
   LogOut,
 } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -24,6 +25,7 @@ const navItems = [
   { to: "/admin/logs/mail", icon: ScrollText, label: "Mail Logs", section: "logs" },
   { to: "/admin/logs/audit", icon: Shield, label: "Audit Logs", section: "logs" },
   { to: "/admin/billing", icon: CreditCard, label: "Billing", section: "admin" },
+  { to: "/admin/password-resets", icon: KeyRound, label: "Password Resets", section: "admin" },
   { to: "/admin/server", icon: Activity, label: "Server Health", section: "admin" },
   { to: "/admin/settings", icon: Settings, label: "Settings", section: "admin" },
 ];

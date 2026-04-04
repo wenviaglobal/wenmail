@@ -27,6 +27,7 @@ export const plans = pgTable("plans", {
   storagePerMailboxMb: integer("storage_per_mailbox_mb").notNull().default(500),
   maxSendPerDay: integer("max_send_per_day").notNull().default(500),
   priceMonthly: decimal("price_monthly", { precision: 10, scale: 2 }).default("0"),
+  isInternal: boolean("is_internal").default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

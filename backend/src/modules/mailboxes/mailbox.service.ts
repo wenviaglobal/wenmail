@@ -67,11 +67,11 @@ export async function createMailbox(domainId: string, input: CreateMailboxInput)
   });
   if (!domain) throw new NotFoundError("Domain", domainId);
 
-  // Check plan limit
+  // Check plan limit (only count active mailboxes)
   const [count] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(mailboxes)
-    .where(eq(mailboxes.clientId, domain.clientId));
+    .where(and(eq(mailboxes.clientId, domain.clientId), eq(mailboxes.status, "active")));
 
   const maxMailboxes = domain.client?.plan?.maxMailboxes ?? 50;
   if (count.count >= maxMailboxes) {

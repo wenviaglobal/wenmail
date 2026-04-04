@@ -1,0 +1,1 @@
+ALTER TABLE "plans" ADD COLUMN "is_internal" boolean DEFAULT false;

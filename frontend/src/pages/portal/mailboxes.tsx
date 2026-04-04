@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe } from "lucide-react";
+import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical } from "lucide-react";
 import { portalApi } from "../../api/portal";
 import { type Domain } from "../../api/domains";
 import { type Mailbox } from "../../api/mailboxes";
@@ -73,6 +73,11 @@ export function PortalMailboxesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] }),
   });
 
+  const permanentDeleteMutation = useMutation({
+    mutationFn: (id: string) => portalApi.delete(`mailboxes/${id}/permanent`).json(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] }),
+  });
+
   const columns = [
     { key: "email", header: "Email", render: (m: Mailbox) => <span className="font-medium">{m.localPart}@{m.domainName}</span> },
     { key: "name", header: "Name", render: (m: Mailbox) => m.displayName ?? "-" },
@@ -86,8 +91,49 @@ export function PortalMailboxesPage() {
     },
     {
       key: "actions", header: "", render: (m: Mailbox) => (
-        <button onClick={() => { if (confirm(`Disable ${m.localPart}@${m.domainName}?`)) deleteMutation.mutate(m.id); }}
-          className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+        <div className="relative group">
+          <button className="text-gray-400 hover:text-gray-600 p-1">
+            <MoreVertical size={16} />
+          </button>
+          <div className="hidden group-hover:block absolute right-0 top-6 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1 min-w-[160px]">
+            {m.status === "active" ? (
+              <>
+                <button onClick={() => {
+                  const pw = prompt(`New password for ${m.localPart}@${m.domainName} (min 8 chars):`);
+                  if (pw && pw.length >= 8) {
+                    portalApi.put(`mailboxes/${m.id}`, { json: { password: pw } }).json()
+                      .then(() => alert("Password changed successfully"))
+                      .catch(() => alert("Failed to change password"));
+                  } else if (pw) { alert("Password must be at least 8 characters"); }
+                }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  Change Password
+                </button>
+                <button onClick={() => { if (confirm(`Disable ${m.localPart}@${m.domainName}?`)) deleteMutation.mutate(m.id); }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t border-slate-100">
+                  Disable Mailbox
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => {
+                  portalApi.put(`mailboxes/${m.id}`, { json: { status: "active" } }).json()
+                    .then(() => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] }));
+                }}
+                  className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50">
+                  Re-enable
+                </button>
+                <button onClick={() => {
+                  if (confirm(`PERMANENTLY DELETE ${m.localPart}@${m.domainName}?\n\nThis will remove all emails and cannot be undone.`))
+                    permanentDeleteMutation.mutate(m.id);
+                }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t border-slate-100">
+                  Delete Forever
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       ),
     },
   ];
