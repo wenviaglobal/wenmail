@@ -1,280 +1,293 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Mail, Inbox, Send, Trash2, Archive, Star, AlertTriangle, RefreshCw,
-  Pencil, ArrowLeft, LogOut, Menu, X, ChevronDown, Folder,
+  Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
+  Forward, Paperclip, Download, CheckSquare, Square, StarOff,
+  MailOpen, MailCheck,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 
 const API = "/api/webmail";
-
 function headers() {
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("webmailToken")}`,
-  };
+  return { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("webmailToken")}` };
 }
-
 async function api(path: string, opts?: RequestInit) {
   const res = await fetch(`${API}${path}`, { ...opts, headers: { ...headers(), ...opts?.headers } });
-  if (res.status === 401) {
-    localStorage.removeItem("webmailToken");
-    window.location.href = "/mail/login";
-    throw new Error("Unauthorized");
-  }
+  if (res.status === 401) { localStorage.removeItem("webmailToken"); window.location.href = "/mail/login"; throw new Error("Unauthorized"); }
   return res.json();
 }
 
-interface MessageSummary {
-  uid: number;
-  from: { name: string; address: string } | null;
-  to: { name: string; address: string }[];
-  subject: string;
-  date: string | null;
-  seen: boolean;
-  flagged: boolean;
-  size: number;
+interface Attachment { id: number; filename: string; contentType: string; size: number; }
+interface MsgSummary {
+  uid: number; from: { name: string; address: string } | null;
+  to: { name: string; address: string }[]; subject: string; date: string | null;
+  seen: boolean; flagged: boolean; hasAttachment?: boolean; size: number; messageId?: string;
 }
-
-interface MessageDetail extends MessageSummary {
-  body: string;
-  contentType: string;
-  cc: { name: string; address: string }[];
+interface MsgDetail extends MsgSummary {
+  text: string; html: string; contentType: string; attachments: Attachment[];
+  cc: { name: string; address: string }[]; inReplyTo: string | null; references: string | null;
+  replyTo: { name: string; address: string }[];
 }
-
-interface FolderInfo {
-  name: string;
-  path: string;
-  specialUse: string | null;
-  messages: number;
-  unseen: number;
-}
+interface FolderInfo { name: string; path: string; specialUse: string | null; messages: number; unseen: number; }
 
 const folderIcons: Record<string, typeof Inbox> = {
-  "\\Inbox": Inbox,
-  "\\Sent": Send,
-  "\\Trash": Trash2,
-  "\\Drafts": Pencil,
-  "\\Junk": AlertTriangle,
-  "\\Archive": Archive,
+  "\\Inbox": Inbox, "\\Sent": Send, "\\Trash": Trash2, "\\Drafts": Pencil, "\\Junk": AlertTriangle, "\\Archive": Archive,
 };
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { month: "short", day: "numeric" });
-  return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+function formatDate(d: string | null): string {
+  if (!d) return "";
+  const date = new Date(d), now = new Date();
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
 }
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+function addrStr(a: { name: string; address: string } | null) { return a ? (a.name ? `${a.name} <${a.address}>` : a.address) : ""; }
 
 export function WebmailApp() {
   const navigate = useNavigate();
   const email = localStorage.getItem("webmailEmail") || "";
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [currentFolder, setCurrentFolder] = useState("INBOX");
-  const [messages, setMessages] = useState<MessageSummary[]>([]);
-  const [selectedMsg, setSelectedMsg] = useState<MessageDetail | null>(null);
+  const [messages, setMessages] = useState<MsgSummary[]>([]);
+  const [selectedMsg, setSelectedMsg] = useState<MsgDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showCompose, setShowCompose] = useState(false);
+  const [compose, setCompose] = useState<{ mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [total, setTotal] = useState(0);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
 
-  const loadFolders = useCallback(async () => {
-    try {
-      const data = await api("/folders");
-      setFolders(data);
-    } catch {}
-  }, []);
-
+  const loadFolders = useCallback(async () => { try { setFolders(await api("/folders")); } catch {} }, []);
   const loadMessages = useCallback(async (folder: string) => {
-    setLoading(true);
-    setSelectedMsg(null);
-    try {
-      const data = await api(`/messages?folder=${encodeURIComponent(folder)}`);
-      setMessages(data.messages || []);
-      setTotal(data.total || 0);
-    } catch {}
+    setLoading(true); setSelectedMsg(null); setSelected(new Set());
+    try { const d = await api(`/messages?folder=${encodeURIComponent(folder)}`); setMessages(d.messages || []); setTotal(d.total || 0); } catch {}
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (!localStorage.getItem("webmailToken")) {
-      navigate("/mail/login");
-      return;
-    }
-    loadFolders();
-    loadMessages("INBOX");
+    if (!localStorage.getItem("webmailToken")) { navigate("/mail/login"); return; }
+    loadFolders(); loadMessages("INBOX");
   }, []);
 
   async function openMessage(uid: number) {
     setLoading(true);
     try {
-      const data = await api(`/message/${uid}?folder=${encodeURIComponent(currentFolder)}`);
-      setSelectedMsg(data);
-      // Update seen status in list
-      setMessages((prev) => prev.map((m) => (m.uid === uid ? { ...m, seen: true } : m)));
+      const d = await api(`/message/${uid}?folder=${encodeURIComponent(currentFolder)}`);
+      setSelectedMsg(d);
+      setMessages(prev => prev.map(m => m.uid === uid ? { ...m, seen: true } : m));
     } catch {}
     setLoading(false);
   }
 
-  async function moveMessage(uid: number, toFolder: string) {
-    await api("/move", {
-      method: "POST",
-      body: JSON.stringify({ uid, fromFolder: currentFolder, toFolder }),
-    });
-    setSelectedMsg(null);
-    loadMessages(currentFolder);
-    loadFolders();
+  async function moveMessages(uids: number[], toFolder: string) {
+    await api("/move", { method: "POST", body: JSON.stringify({ uids, fromFolder: currentFolder, toFolder }) });
+    setSelectedMsg(null); setSelected(new Set()); loadMessages(currentFolder); loadFolders();
   }
 
-  function selectFolder(path: string) {
-    setCurrentFolder(path);
-    loadMessages(path);
-    setSidebarOpen(false);
+  async function flagMessages(uids: number[], flag: string, add: boolean) {
+    await api("/flag", { method: "POST", body: JSON.stringify({ uids, folder: currentFolder, flag, add }) });
+    loadMessages(currentFolder); loadFolders();
   }
 
-  function handleLogout() {
-    api("/logout", { method: "POST" }).catch(() => {});
-    localStorage.removeItem("webmailToken");
-    localStorage.removeItem("webmailEmail");
-    navigate("/mail/login");
+  async function doSearch() {
+    if (!searchQuery.trim()) { loadMessages(currentFolder); return; }
+    setSearching(true); setSelectedMsg(null);
+    try { const d = await api(`/search?folder=${encodeURIComponent(currentFolder)}&q=${encodeURIComponent(searchQuery)}`); setMessages(d.messages || []); setTotal(d.total || 0); } catch {}
+    setSearching(false);
   }
+
+  function selectFolder(path: string) { setCurrentFolder(path); setSearchQuery(""); loadMessages(path); setSidebarOpen(false); }
+  function handleLogout() { api("/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem("webmailToken"); localStorage.removeItem("webmailEmail"); navigate("/mail/login"); }
+  function toggleSelect(uid: number) { setSelected(prev => { const s = new Set(prev); s.has(uid) ? s.delete(uid) : s.add(uid); return s; }); }
+  function selectAll() { setSelected(prev => prev.size === messages.length ? new Set() : new Set(messages.map(m => m.uid))); }
+
+  function startReply(msg: MsgDetail, mode: "reply" | "replyAll" | "forward") { setCompose({ mode, original: msg }); }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-slate-900">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 flex flex-col transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg flex items-center justify-center">
-              <Mail size={16} className="text-white" />
-            </div>
+            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-lg flex items-center justify-center"><Mail size={16} className="text-white" /></div>
             <span className="font-bold dark:text-white"><span className="text-indigo-600">Wen</span>Mail</span>
           </div>
           <button className="lg:hidden text-gray-400" onClick={() => setSidebarOpen(false)}><X size={20} /></button>
         </div>
-
         <div className="p-3">
-          <button
-            onClick={() => { setShowCompose(true); setSidebarOpen(false); }}
-            className="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 flex items-center justify-center gap-2 shadow-sm"
-          >
+          <button onClick={() => { setCompose({ mode: "new" }); setSidebarOpen(false); }}
+            className="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 flex items-center justify-center gap-2 shadow-sm">
             <Pencil size={16} /> Compose
           </button>
         </div>
-
         <nav className="flex-1 px-2 space-y-0.5 overflow-y-auto">
-          {folders.map((f) => {
+          {folders.map(f => {
             const Icon = folderIcons[f.specialUse || ""] || Folder;
-            const isActive = f.path === currentFolder;
             return (
-              <button
-                key={f.path}
-                onClick={() => selectFolder(f.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${
-                  isActive
-                    ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium"
-                    : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"
-                }`}
-              >
-                <Icon size={16} />
-                <span className="flex-1 text-left">{f.name}</span>
-                {f.unseen > 0 && (
-                  <span className="bg-indigo-600 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">{f.unseen}</span>
-                )}
+              <button key={f.path} onClick={() => selectFolder(f.path)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${f.path === currentFolder ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"}`}>
+                <Icon size={16} /><span className="flex-1 text-left">{f.name}</span>
+                {f.unseen > 0 && <span className="bg-indigo-600 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">{f.unseen}</span>}
               </button>
             );
           })}
         </nav>
-
         <div className="p-3 border-t border-gray-200 dark:border-slate-700">
           <p className="text-xs text-gray-500 dark:text-slate-500 truncate mb-2">{email}</p>
           <div className="flex items-center justify-between">
-            <button onClick={handleLogout} className="text-xs text-gray-500 dark:text-slate-400 hover:text-red-600 flex items-center gap-1">
-              <LogOut size={14} /> Logout
-            </button>
+            <button onClick={handleLogout} className="text-xs text-gray-500 dark:text-slate-400 hover:text-red-600 flex items-center gap-1"><LogOut size={14} /> Logout</button>
             <ThemeToggle />
           </div>
         </div>
       </aside>
 
-      {/* Main area */}
+      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           <button className="lg:hidden text-gray-500 dark:text-slate-400" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
-          <h2 className="font-semibold text-gray-800 dark:text-white flex-1">{currentFolder === "INBOX" ? "Inbox" : currentFolder}</h2>
-          <span className="text-xs text-gray-400 dark:text-slate-500">{total} messages</span>
-          <button onClick={() => loadMessages(currentFolder)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white">
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          <h2 className="font-semibold text-gray-800 dark:text-white text-sm">{currentFolder === "INBOX" ? "Inbox" : currentFolder}</h2>
+          <div className="flex-1" />
+          {/* Search */}
+          <form onSubmit={e => { e.preventDefault(); doSearch(); }} className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded-lg px-2 py-1">
+            <Search size={14} className="text-gray-400" />
+            <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search..."
+              className="bg-transparent text-sm outline-none w-24 md:w-48 dark:text-white" />
+          </form>
+          <span className="text-xs text-gray-400 dark:text-slate-500 hidden md:block">{total}</span>
+          <button onClick={() => { setSearchQuery(""); loadMessages(currentFolder); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white">
+            <RefreshCw size={14} className={loading || searching ? "animate-spin" : ""} />
           </button>
         </div>
+
+        {/* Bulk actions */}
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-800 text-sm">
+            <span className="text-indigo-700 dark:text-indigo-400 font-medium">{selected.size} selected</span>
+            <button onClick={() => moveMessages([...selected], "Trash")} className="text-red-600 hover:text-red-800 flex items-center gap-1 text-xs"><Trash2 size={12} /> Delete</button>
+            <button onClick={() => moveMessages([...selected], "Archive")} className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"><Archive size={12} /> Archive</button>
+            <button onClick={() => flagMessages([...selected], "\\Seen", true)} className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-xs"><MailCheck size={12} /> Read</button>
+            <button onClick={() => flagMessages([...selected], "\\Seen", false)} className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-xs"><MailOpen size={12} /> Unread</button>
+            <button onClick={() => flagMessages([...selected], "\\Flagged", true)} className="text-yellow-600 hover:text-yellow-800 flex items-center gap-1 text-xs"><Star size={12} /> Star</button>
+            <button onClick={() => setSelected(new Set())} className="ml-auto text-gray-500 text-xs">Clear</button>
+          </div>
+        )}
 
         <div className="flex-1 flex overflow-hidden">
           {/* Message list */}
           <div className={`${selectedMsg ? "hidden md:flex" : "flex"} flex-col w-full md:w-96 border-r border-gray-200 dark:border-slate-700 overflow-y-auto bg-white dark:bg-slate-800`}>
-            {messages.length === 0 && !loading && (
-              <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500 text-sm">No messages</div>
-            )}
-            {messages.map((msg) => (
-              <button
-                key={msg.uid}
-                onClick={() => openMessage(msg.uid)}
-                className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-slate-700/50 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition ${
-                  selectedMsg?.uid === msg.uid ? "bg-indigo-50 dark:bg-indigo-900/20" : ""
-                } ${!msg.seen ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-sm truncate flex-1 ${!msg.seen ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-slate-400"}`}>
-                    {msg.from?.name || msg.from?.address || "Unknown"}
-                  </span>
-                  <span className="text-xs text-gray-400 dark:text-slate-500 ml-2 shrink-0">{formatDate(msg.date)}</span>
-                </div>
-                <div className={`text-sm truncate ${!msg.seen ? "font-medium text-gray-800 dark:text-slate-200" : "text-gray-500 dark:text-slate-400"}`}>
-                  {msg.subject}
-                </div>
+            {/* Select all */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-slate-700/50 bg-gray-50 dark:bg-slate-800">
+              <button onClick={selectAll} className="text-gray-400 hover:text-gray-600">
+                {selected.size === messages.length && messages.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
               </button>
+              <span className="text-xs text-gray-400">{messages.length > 0 ? `${messages.length} messages` : ""}</span>
+            </div>
+
+            {messages.length === 0 && !loading && (
+              <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500 text-sm">
+                {searchQuery ? "No results" : "No messages"}
+              </div>
+            )}
+            {messages.map(msg => (
+              <div key={msg.uid}
+                className={`flex items-start gap-2 px-3 py-2.5 border-b border-gray-100 dark:border-slate-700/50 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition ${selectedMsg?.uid === msg.uid ? "bg-indigo-50 dark:bg-indigo-900/20" : ""} ${!msg.seen ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+                <button onClick={e => { e.stopPropagation(); toggleSelect(msg.uid); }} className="mt-1 text-gray-300 hover:text-gray-500 shrink-0">
+                  {selected.has(msg.uid) ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />}
+                </button>
+                <button onClick={e => { e.stopPropagation(); flagMessages([msg.uid], "\\Flagged", !msg.flagged); }}
+                  className={`mt-1 shrink-0 ${msg.flagged ? "text-yellow-500" : "text-gray-300 hover:text-yellow-500"}`}>
+                  {msg.flagged ? <Star size={14} /> : <StarOff size={14} />}
+                </button>
+                <div className="flex-1 min-w-0" onClick={() => openMessage(msg.uid)}>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className={`text-sm truncate flex-1 ${!msg.seen ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-slate-400"}`}>
+                      {msg.from?.name || msg.from?.address || "Unknown"}
+                    </span>
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                      {msg.hasAttachment && <Paperclip size={10} className="text-gray-400" />}
+                      <span className="text-xs text-gray-400 dark:text-slate-500">{formatDate(msg.date)}</span>
+                    </div>
+                  </div>
+                  <div className={`text-sm truncate ${!msg.seen ? "font-medium text-gray-800 dark:text-slate-200" : "text-gray-500 dark:text-slate-400"}`}>
+                    {msg.subject}
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
 
           {/* Message detail */}
           {selectedMsg ? (
             <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-800">
-              <div className="px-4 md:px-6 py-4 border-b border-gray-200 dark:border-slate-700">
-                <div className="flex items-center gap-3 mb-3">
+              <div className="px-4 md:px-6 py-4 border-b border-gray-200 dark:border-slate-700 shrink-0">
+                <div className="flex items-center gap-2 mb-3">
                   <button onClick={() => setSelectedMsg(null)} className="md:hidden text-gray-500"><ArrowLeft size={20} /></button>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex-1 truncate">{selectedMsg.subject}</h3>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-700 dark:text-slate-300">
                       {selectedMsg.from?.name || selectedMsg.from?.address}
-                      {selectedMsg.from?.name && <span className="text-gray-400 dark:text-slate-500 font-normal ml-1">&lt;{selectedMsg.from.address}&gt;</span>}
+                      {selectedMsg.from?.name && <span className="text-gray-400 dark:text-slate-500 font-normal ml-1 text-xs">&lt;{selectedMsg.from.address}&gt;</span>}
                     </p>
-                    <p className="text-xs text-gray-400 dark:text-slate-500">
-                      To: {selectedMsg.to.map((t) => t.address).join(", ")}
-                      {selectedMsg.cc?.length > 0 && ` | Cc: ${selectedMsg.cc.map((t) => t.address).join(", ")}`}
+                    <p className="text-xs text-gray-400 dark:text-slate-500 truncate">
+                      To: {selectedMsg.to.map(t => t.address).join(", ")}
+                      {selectedMsg.cc?.length > 0 && ` | Cc: ${selectedMsg.cc.map(t => t.address).join(", ")}`}
                     </p>
+                    <p className="text-xs text-gray-400 dark:text-slate-500">{selectedMsg.date ? new Date(selectedMsg.date).toLocaleString() : ""}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => moveMessage(selectedMsg.uid, "Trash")} className="text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={16} /></button>
-                    <button onClick={() => moveMessage(selectedMsg.uid, "Archive")} className="text-gray-400 hover:text-blue-500" title="Archive"><Archive size={16} /></button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => startReply(selectedMsg, "reply")} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded" title="Reply"><Reply size={16} /></button>
+                    <button onClick={() => startReply(selectedMsg, "replyAll")} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded" title="Reply All"><ReplyAll size={16} /></button>
+                    <button onClick={() => startReply(selectedMsg, "forward")} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded" title="Forward"><Forward size={16} /></button>
+                    <div className="w-px h-4 bg-gray-200 dark:bg-slate-600 mx-1" />
+                    <button onClick={() => moveMessages([selectedMsg.uid], "Trash")} className="p-1.5 text-gray-400 hover:text-red-500 rounded" title="Delete"><Trash2 size={16} /></button>
+                    <button onClick={() => moveMessages([selectedMsg.uid], "Archive")} className="p-1.5 text-gray-400 hover:text-blue-500 rounded" title="Archive"><Archive size={16} /></button>
+                    <button onClick={() => flagMessages([selectedMsg.uid], "\\Flagged", !selectedMsg.flagged)} className={`p-1.5 rounded ${selectedMsg.flagged ? "text-yellow-500" : "text-gray-400 hover:text-yellow-500"}`} title="Star"><Star size={16} /></button>
                   </div>
                 </div>
-                <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">{selectedMsg.date ? new Date(selectedMsg.date).toLocaleString() : ""}</p>
               </div>
+
+              {/* Attachments bar */}
+              {selectedMsg.attachments?.length > 0 && (
+                <div className="px-4 md:px-6 py-2 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80 flex items-center gap-2 flex-wrap">
+                  <Paperclip size={14} className="text-gray-400 shrink-0" />
+                  {selectedMsg.attachments.map(att => (
+                    <a key={att.id}
+                      href={`${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`}
+                      target="_blank" rel="noopener"
+                      className="inline-flex items-center gap-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
+                      <Download size={10} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {/* Body */}
               <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                {selectedMsg.contentType === "html" ? (
-                  <div className="prose dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: selectedMsg.body }} />
+                {selectedMsg.contentType === "html" && selectedMsg.html ? (
+                  <div className="prose dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: selectedMsg.html }} />
                 ) : (
-                  <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-slate-300 font-sans">{selectedMsg.body}</pre>
+                  <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-slate-300 font-sans">{selectedMsg.text}</pre>
                 )}
+              </div>
+
+              {/* Quick reply */}
+              <div className="px-4 md:px-6 py-3 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80">
+                <button onClick={() => startReply(selectedMsg, "reply")}
+                  className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                  <Reply size={14} /> Click here to reply
+                </button>
               </div>
             </div>
           ) : (
@@ -289,73 +302,137 @@ export function WebmailApp() {
       </div>
 
       {/* Compose modal */}
-      {showCompose && <ComposeModal email={email} onClose={() => setShowCompose(false)} onSent={() => { setShowCompose(false); loadFolders(); }} />}
+      {compose && <ComposeModal email={email} compose={compose} onClose={() => setCompose(null)} onSent={() => { setCompose(null); loadFolders(); loadMessages(currentFolder); }} />}
     </div>
   );
 }
 
-function ComposeModal({ email, onClose, onSent }: { email: string; onClose: () => void; onSent: () => void }) {
-  const [to, setTo] = useState("");
-  const [subject, setSubject] = useState("");
-  const [text, setText] = useState("");
+// ==========================================
+// COMPOSE MODAL
+// ==========================================
+
+interface ComposeProps {
+  email: string;
+  compose: { mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail };
+  onClose: () => void;
+  onSent: () => void;
+}
+
+function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
+  const { mode, original } = compose;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachments, setAttachments] = useState<{ filename: string; content: string; contentType: string }[]>([]);
+
+  const prefillTo = () => {
+    if (!original) return "";
+    if (mode === "reply") return original.replyTo?.[0]?.address || original.from?.address || "";
+    if (mode === "replyAll") {
+      const addrs = [original.from?.address, ...original.to.map(t => t.address), ...(original.cc || []).map(t => t.address)].filter(a => a && a !== email);
+      return addrs.join(", ");
+    }
+    return "";
+  };
+  const prefillSubject = () => {
+    if (!original) return "";
+    const subj = original.subject.replace(/^(Re:|Fwd?:)\s*/gi, "").trim();
+    return mode === "forward" ? `Fwd: ${subj}` : `Re: ${subj}`;
+  };
+  const prefillBody = () => {
+    if (!original) return "";
+    const date = original.date ? new Date(original.date).toLocaleString() : "";
+    const from = addrStr(original.from);
+    const header = `\n\nOn ${date}, ${from} wrote:\n`;
+    const quoted = (original.text || "").split("\n").map(l => `> ${l}`).join("\n");
+    return mode === "forward" ? `\n\n---------- Forwarded message ----------\nFrom: ${from}\nDate: ${date}\nSubject: ${original.subject}\nTo: ${original.to.map(t => t.address).join(", ")}\n\n${original.text || ""}` : `${header}${quoted}`;
+  };
+
+  const [to, setTo] = useState(prefillTo);
+  const [subject, setSubject] = useState(prefillSubject);
+  const [text, setText] = useState(prefillBody);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
+  function handleFiles(files: FileList | null) {
+    if (!files) return;
+    Array.from(files).forEach(file => {
+      // Max 25 MB per file
+      if (file.size > 25 * 1024 * 1024) { setError(`${file.name} exceeds 25 MB limit`); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(",")[1];
+        setAttachments(prev => [...prev, { filename: file.name, content: base64, contentType: file.type || "application/octet-stream" }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    setSending(true);
-    setError("");
+    setSending(true); setError("");
     try {
-      await api("/send", { method: "POST", body: JSON.stringify({ to, subject, text }) });
+      await api("/send", { method: "POST", body: JSON.stringify({
+        to, subject, text,
+        attachments: attachments.length > 0 ? attachments : undefined,
+        inReplyTo: original?.messageId || undefined,
+        references: original?.references ? `${original.references} ${original.messageId}` : original?.messageId || undefined,
+      })});
       onSent();
-    } catch {
-      setError("Failed to send email");
-    }
+    } catch { setError("Failed to send email"); }
     setSending(false);
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
-      <div className="bg-white dark:bg-slate-800 w-full md:w-[640px] md:rounded-xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[80vh]">
+      <div className="bg-white dark:bg-slate-800 w-full md:w-[680px] md:rounded-xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[80vh]">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700">
-          <h3 className="font-semibold dark:text-white">New Message</h3>
+          <h3 className="font-semibold dark:text-white">
+            {mode === "new" ? "New Message" : mode === "reply" ? "Reply" : mode === "replyAll" ? "Reply All" : "Forward"}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
         <form onSubmit={handleSend} className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-400 dark:text-slate-500 w-12">From:</span>
-              <span className="text-gray-700 dark:text-slate-300">{email}</span>
-            </div>
+          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2 text-sm">
+            <span className="text-gray-400 dark:text-slate-500 w-12">From:</span>
+            <span className="text-gray-700 dark:text-slate-300">{email}</span>
           </div>
-          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 dark:text-slate-500 text-sm w-12">To:</span>
-              <input type="text" value={to} onChange={(e) => setTo(e.target.value)} required
-                placeholder="recipient@example.com"
-                className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
-            </div>
+          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+            <span className="text-gray-400 dark:text-slate-500 text-sm w-12">To:</span>
+            <input type="text" value={to} onChange={e => setTo(e.target.value)} required placeholder="recipient@example.com"
+              className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
           </div>
-          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 dark:text-slate-500 text-sm w-12">Subj:</span>
-              <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)}
-                placeholder="Subject"
-                className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
-            </div>
+          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+            <span className="text-gray-400 dark:text-slate-500 text-sm w-12">Subj:</span>
+            <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject"
+              className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
           </div>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Write your message..."
-            className="flex-1 p-4 text-sm outline-none resize-none bg-transparent dark:text-white min-h-[200px]"
-          />
+
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2 flex-wrap">
+              {attachments.map((att, i) => (
+                <span key={i} className="inline-flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded px-2 py-1 text-xs">
+                  <Paperclip size={10} /> {att.filename}
+                  <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 ml-1"><X size={10} /></button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Write your message..."
+            className="flex-1 p-4 text-sm outline-none resize-none bg-transparent dark:text-white min-h-[200px]" />
+
           {error && <div className="px-4 py-2 text-red-500 text-sm">{error}</div>}
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-slate-700">
-            <button type="submit" disabled={!to || sending}
-              className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-              <Send size={16} /> {sending ? "Sending..." : "Send"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button type="submit" disabled={!to || sending}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                <Send size={16} /> {sending ? "Sending..." : "Send"}
+              </button>
+              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Attach file">
+                <Paperclip size={18} />
+              </button>
+            </div>
             <button type="button" onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Discard</button>
           </div>
         </form>
