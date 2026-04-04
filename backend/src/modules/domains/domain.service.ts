@@ -2,6 +2,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { generateKeyPairSync } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
+import { logAudit } from "../../lib/audit.js";
 import { db } from "../../db/index.js";
 import { domains, dnsChecks, clients, plans } from "../../db/schema.js";
 import { NotFoundError, ConflictError, LimitExceededError } from "../../lib/errors.js";
@@ -75,6 +76,8 @@ export async function createDomain(clientId: string, domainName: string) {
   } catch {
     // Non-fatal in dev — Rspamd may not be running
   }
+
+  logAudit({ actorType: "system", action: "domain.created", targetType: "domain", targetId: domain.id, details: { domainName: domainName.toLowerCase(), clientId } });
 
   return domain;
 }

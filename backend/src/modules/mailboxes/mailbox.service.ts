@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { mailboxes, domains, clients, plans } from "../../db/schema.js";
 import { NotFoundError, ConflictError, LimitExceededError } from "../../lib/errors.js";
 import { hashPasswordForDovecot } from "../../lib/password.js";
+import { logAudit } from "../../lib/audit.js";
 import { reloadPostfix, reloadDovecot } from "../../mail/postfix.js";
 
 interface CreateMailboxInput {
@@ -109,6 +110,8 @@ export async function createMailbox(domainId: string, input: CreateMailboxInput)
   // Reload mail services so they pick up the new mailbox
   await reloadPostfix();
   await reloadDovecot();
+
+  logAudit({ actorType: "system", action: "mailbox.created", targetType: "mailbox", targetId: mailbox.id, details: { email: `${input.localPart}@${domain.domainName}`, domainId } });
 
   return mailbox;
 }

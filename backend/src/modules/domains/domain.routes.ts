@@ -9,7 +9,7 @@ const createDomainSchema = z.object({
     .string()
     .min(3)
     .max(255)
-    .regex(/^[a-z0-9]+([\-.][a-z0-9]+)*\.[a-z]{2,}$/, "Invalid domain format"),
+    .regex(/^[a-z0-9]+([-.][a-z0-9]+)*\.[a-z]{2,}$/, "Invalid domain format"),
 });
 
 export async function domainRoutes(app: FastifyInstance) {

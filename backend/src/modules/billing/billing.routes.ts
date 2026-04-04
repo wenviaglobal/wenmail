@@ -7,6 +7,7 @@ import { invoices, payments, clients, clientUsers, passwordResetRequests } from 
 import { NotFoundError } from "../../lib/errors.js";
 import { nanoid } from "nanoid";
 import { hashPassword } from "../../lib/password.js";
+import { logAudit } from "../../lib/audit.js";
 
 const createInvoiceSchema = z.object({
   clientId: z.string().uuid(),
@@ -303,6 +304,8 @@ export async function billingRoutes(app: FastifyInstance) {
         notes: notes ?? null,
       })
       .where(eq(passwordResetRequests.id, request.params.id));
+
+    logAudit({ actorType: "admin", actorId: admin.id, action: "password.reset", targetType: "client_user", targetId: resetReq.clientUserId, details: { email: resetReq.email } });
 
     return { message: "Password reset completed" };
   });

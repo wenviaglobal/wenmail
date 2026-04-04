@@ -1,13 +1,13 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { logger } from "../lib/logger.js";
 import { env } from "../config/env.js";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Reload Postfix to pick up new virtual maps from PostgreSQL.
- * In development, this is a no-op.
+ * Uses execFile (no shell) to prevent command injection.
  */
 export async function reloadPostfix(): Promise<void> {
   if (env.NODE_ENV === "development") {
@@ -16,7 +16,7 @@ export async function reloadPostfix(): Promise<void> {
   }
 
   try {
-    await execAsync("postfix reload");
+    await execFileAsync("postfix", ["reload"]);
     logger.info("Postfix reloaded successfully");
   } catch (err) {
     logger.error({ err }, "Failed to reload Postfix");
@@ -33,7 +33,7 @@ export async function reloadDovecot(): Promise<void> {
   }
 
   try {
-    await execAsync("doveadm reload");
+    await execFileAsync("doveadm", ["reload"]);
     logger.info("Dovecot reloaded successfully");
   } catch (err) {
     logger.error({ err }, "Failed to reload Dovecot");
