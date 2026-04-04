@@ -101,5 +101,11 @@ export async function buildApp() {
   await app.register(clientAuthRoutes, { prefix: "/api/client-portal/auth" });
   await app.register(portalRoutes, { prefix: "/api/client-portal" });
 
+  // ==========================================
+  // Webmail routes (IMAP/SMTP proxy — no JWT, uses own session)
+  // ==========================================
+  const { webmailRoutes } = await import("./modules/webmail/webmail.routes.js");
+  await app.register(webmailRoutes, { prefix: "/api/webmail" });
+
   return app;
 }

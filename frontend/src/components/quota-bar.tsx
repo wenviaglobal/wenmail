@@ -16,11 +16,11 @@ export function QuotaBar({ used, total, label }: QuotaBarProps) {
 
   return (
     <div className="w-full min-w-[120px]">
-      <div className="flex justify-between text-xs text-gray-500 mb-1">
+      <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400 mb-1">
         <span>{label ?? `${percent.toFixed(0)}% Used`}</span>
         <span>{formatStorage(used)} / {formatStorage(total)}</span>
       </div>
-      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="w-full h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
         <div
           className={cn(
             "h-full rounded-full transition-all",

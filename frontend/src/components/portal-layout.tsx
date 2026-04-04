@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Outlet, NavLink } from "react-router";
-import { LayoutDashboard, BookOpen, Globe, Mail, ArrowRightLeft, ScrollText, CreditCard, Import, LogOut } from "lucide-react";
+import { LayoutDashboard, BookOpen, Globe, Mail, ArrowRightLeft, ScrollText, CreditCard, Import, LogOut, Menu, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { portalLogout } from "../api/portal";
 import { usePortalAuth } from "../hooks/use-portal-auth";
+import { ThemeToggle } from "./theme-toggle";
 
 const navItems = [
   { to: "/portal", icon: LayoutDashboard, label: "Dashboard" },
@@ -17,25 +19,41 @@ const navItems = [
 
 export function PortalLayout() {
   const { user } = usePortalAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen">
-      <aside className="w-60 bg-slate-800 text-white flex flex-col">
-        <div className="p-4 border-b border-slate-600">
-          <h1 className="text-lg font-bold">WenMail</h1>
-          <p className="text-xs text-slate-400 truncate">{user?.clientName ?? "Client Portal"}</p>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <aside className={cn(
+        "fixed lg:static inset-y-0 left-0 z-50 w-60 bg-slate-800 dark:bg-slate-950 text-white flex flex-col transition-transform lg:translate-x-0",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-4 border-b border-slate-600 dark:border-slate-700 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold">WenMail</h1>
+            <p className="text-xs text-slate-400 truncate">{user?.clientName ?? "Client Portal"}</p>
+          </div>
+          <button className="lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
+            <X size={20} />
+          </button>
         </div>
 
-        <nav className="flex-1 p-2 space-y-1">
+        <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/portal"}
+              onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                  isActive ? "bg-indigo-600 text-white" : "text-slate-300 hover:bg-slate-700 hover:text-white",
+                  isActive ? "bg-indigo-600 text-white" : "text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-800 hover:text-white",
                 )
               }
             >
@@ -45,20 +63,33 @@ export function PortalLayout() {
           ))}
         </nav>
 
-        <div className="p-2 border-t border-slate-600">
+        <div className="p-2 border-t border-slate-600 dark:border-slate-700">
           <div className="px-3 py-2 text-xs text-slate-400 truncate">{user?.email}</div>
-          <button
-            onClick={portalLogout}
-            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white w-full"
-          >
-            <LogOut size={18} />
-            Logout
-          </button>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={portalLogout}
+              className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+            >
+              <LogOut size={18} />
+              Logout
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
+      {/* Main content */}
       <main className="flex-1 overflow-auto">
-        <div className="p-6">
+        {/* Mobile header */}
+        <div className="lg:hidden flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <button onClick={() => setSidebarOpen(true)} className="text-gray-600 dark:text-slate-300">
+            <Menu size={24} />
+          </button>
+          <h1 className="text-lg font-bold dark:text-white">WenMail</h1>
+          <ThemeToggle />
+        </div>
+
+        <div className="p-4 md:p-6">
           <Outlet />
         </div>
       </main>

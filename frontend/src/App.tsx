@@ -36,6 +36,10 @@ import { PortalMigrationPage } from "./pages/portal/migration";
 import { PortalDnsSetupPage } from "./pages/portal/dns-setup";
 import { PortalGettingStartedPage } from "./pages/portal/getting-started";
 
+// Webmail pages
+import { WebmailLoginPage } from "./pages/webmail/login";
+import { WebmailApp } from "./pages/webmail/app";
+
 function AdminProtected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>;
@@ -111,6 +115,11 @@ export function App() {
           <Route path="billing" element={<PortalBillingPage />} />
           <Route path="migration" element={<PortalMigrationPage />} />
         </Route>
+        {/* ============================== */}
+        {/* Webmail routes (/mail) */}
+        {/* ============================== */}
+        <Route path="/mail/login" element={<WebmailLoginPage />} />
+        <Route path="/mail" element={<WebmailApp />} />
       </Routes>
     </BrowserRouter>
   );
