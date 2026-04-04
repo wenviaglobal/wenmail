@@ -271,33 +271,34 @@ export function WebmailApp() {
               {/* Attachments bar */}
               {selectedMsg.attachments?.length > 0 && (
                 <div className="px-4 md:px-6 py-3 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80">
-                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <div className="flex items-center gap-2 mb-2">
                     <Paperclip size={14} className="text-gray-400 shrink-0" />
                     <span className="text-xs text-gray-500 dark:text-slate-400">{selectedMsg.attachments.length} attachment(s)</span>
                   </div>
-                  {/* Image previews */}
-                  {selectedMsg.attachments.some(a => a.isImage && a.preview) && (
-                    <div className="flex gap-2 flex-wrap mb-2">
-                      {selectedMsg.attachments.filter(a => a.isImage && a.preview).map(att => (
-                        <a key={att.id}
-                          href={`${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`}
-                          target="_blank" rel="noopener" className="block">
-                          <img src={att.preview} alt={att.filename}
-                            className="max-h-40 max-w-60 rounded border border-gray-200 dark:border-slate-600 object-contain bg-white dark:bg-slate-700 cursor-pointer hover:opacity-90" />
+                  <div className="flex gap-2 flex-wrap">
+                    {selectedMsg.attachments.map(att => {
+                      const downloadUrl = `${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`;
+                      if (att.isImage && att.preview) {
+                        return (
+                          <div key={att.id} className="relative group">
+                            <img src={att.preview} alt={att.filename}
+                              className="max-h-44 max-w-64 rounded-lg border border-gray-200 dark:border-slate-600 object-contain bg-white dark:bg-slate-700" />
+                            <a href={downloadUrl} target="_blank" rel="noopener"
+                              className="absolute inset-0 bg-black/0 group-hover:bg-black/40 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                              <span className="bg-white dark:bg-slate-800 text-gray-700 dark:text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shadow-lg">
+                                <Download size={12} /> {att.filename} ({formatSize(att.size)})
+                              </span>
+                            </a>
+                          </div>
+                        );
+                      }
+                      return (
+                        <a key={att.id} href={downloadUrl} target="_blank" rel="noopener"
+                          className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
+                          <Download size={12} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
                         </a>
-                      ))}
-                    </div>
-                  )}
-                  {/* File download links */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {selectedMsg.attachments.map(att => (
-                      <a key={att.id}
-                        href={`${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`}
-                        target="_blank" rel="noopener"
-                        className="inline-flex items-center gap-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
-                        <Download size={10} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
-                      </a>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
