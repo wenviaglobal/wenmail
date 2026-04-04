@@ -310,6 +310,24 @@ export async function webmailRoutes(app: FastifyInstance) {
 
     await transporter.sendMail(mailOptions);
 
+    // Save to Sent folder via IMAP
+    try {
+      const client = await createImapClient(session.email, session.password);
+      try {
+        const MailComposer = (await import("nodemailer/lib/mail-composer/index.js")).default;
+        const composer = new MailComposer(mailOptions);
+        const raw = await new Promise<Buffer>((resolve, reject) => {
+          composer.compile().build((err: Error | null, message: Buffer) => {
+            if (err) reject(err);
+            else resolve(message);
+          });
+        });
+        await client.append("Sent", raw, ["\\Seen"]);
+      } catch (e) {
+        // Non-fatal — email was sent, just not saved to Sent
+      }
+      await client.logout();
+    } catch {}
 
     return { message: "Email sent" };
   });
