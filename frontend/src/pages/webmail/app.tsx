@@ -42,6 +42,16 @@ function formatDate(d: string | null): string {
   if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString([], { month: "short", day: "numeric" });
   return date.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
 }
+async function downloadAttachment(uid: number, attId: number, folder: string, filename: string) {
+  const res = await fetch(`${API}/message/${uid}/attachment/${attId}?folder=${encodeURIComponent(folder)}`, { headers: headers() });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -277,26 +287,25 @@ export function WebmailApp() {
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     {selectedMsg.attachments.map(att => {
-                      const downloadUrl = `${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`;
+                      const doDownload = () => downloadAttachment(selectedMsg.uid, att.id, currentFolder, att.filename);
                       if (att.isImage && att.preview) {
                         return (
-                          <div key={att.id} className="relative group">
+                          <div key={att.id} className="relative group cursor-pointer" onClick={doDownload}>
                             <img src={att.preview} alt={att.filename}
                               className="max-h-44 max-w-64 rounded-lg border border-gray-200 dark:border-slate-600 object-contain bg-white dark:bg-slate-700" />
-                            <a href={downloadUrl} target="_blank" rel="noopener"
-                              className="absolute inset-0 bg-black/0 group-hover:bg-black/40 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
                               <span className="bg-white dark:bg-slate-800 text-gray-700 dark:text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shadow-lg">
-                                <Download size={12} /> {att.filename} ({formatSize(att.size)})
+                                <Download size={12} /> Save ({formatSize(att.size)})
                               </span>
-                            </a>
+                            </div>
                           </div>
                         );
                       }
                       return (
-                        <a key={att.id} href={downloadUrl} target="_blank" rel="noopener"
+                        <button key={att.id} onClick={doDownload}
                           className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
                           <Download size={12} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
-                        </a>
+                        </button>
                       );
                     })}
                   </div>

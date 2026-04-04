@@ -1,6 +1,7 @@
 import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { generateKeyPairSync } from "node:crypto";
+import { writeFile, mkdir } from "node:fs/promises";
 import { db } from "../../db/index.js";
 import { domains, dnsChecks, clients, plans } from "../../db/schema.js";
 import { NotFoundError, ConflictError, LimitExceededError } from "../../lib/errors.js";
@@ -65,6 +66,15 @@ export async function createDomain(clientId: string, domainName: string) {
       dkimPublicKey: publicKey,
     })
     .returning();
+
+  // Save DKIM private key to disk for Rspamd signing
+  try {
+    await mkdir("/var/mail/dkim", { recursive: true });
+    const keyPath = `/var/mail/dkim/${domainName.toLowerCase()}.${domain.dkimSelector || "mail"}.key`;
+    await writeFile(keyPath, privateKey, { mode: 0o640 });
+  } catch {
+    // Non-fatal in dev — Rspamd may not be running
+  }
 
   return domain;
 }
