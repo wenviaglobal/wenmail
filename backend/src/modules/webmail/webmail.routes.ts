@@ -367,6 +367,32 @@ export async function webmailRoutes(app: FastifyInstance) {
     return { message: `${uids.length} message(s) moved` };
   });
 
+  // POST /api/webmail/delete — permanently delete messages from a folder
+  app.post("/delete", async (request, reply) => {
+    const session = getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const { uids, folder } = z.object({
+      uids: z.array(z.number()).min(1),
+      folder: z.string(),
+    }).parse(request.body);
+
+    const client = await createImapClient(session.email, session.password);
+    try {
+      const lock = await client.getMailboxLock(folder);
+      try {
+        for (const uid of uids) {
+          await client.messageDelete({ uid }, { uid: true });
+        }
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+    return { message: `${uids.length} message(s) permanently deleted` };
+  });
+
   app.post("/flag", async (request, reply) => {
     const session = getSession(request as any);
     if (!session) return reply.status(401).send({ message: "Unauthorized" });

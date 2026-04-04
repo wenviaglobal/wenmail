@@ -108,6 +108,18 @@ export function WebmailApp() {
     setSelectedMsg(null); setSelected(new Set()); loadMessages(currentFolder); loadFolders();
   }
 
+  async function deleteMessages(uids: number[]) {
+    await api("/delete", { method: "POST", body: JSON.stringify({ uids, folder: currentFolder }) });
+    setSelectedMsg(null); setSelected(new Set()); loadMessages(currentFolder); loadFolders();
+  }
+
+  const isTrashOrJunk = currentFolder === "Trash" || currentFolder === "Junk";
+
+  function handleDelete(uids: number[]) {
+    if (isTrashOrJunk) deleteMessages(uids);
+    else moveMessages(uids, "Trash");
+  }
+
   async function flagMessages(uids: number[], flag: string, add: boolean) {
     await api("/flag", { method: "POST", body: JSON.stringify({ uids, folder: currentFolder, flag, add }) });
     loadMessages(currentFolder); loadFolders();
@@ -193,7 +205,7 @@ export function WebmailApp() {
         {selected.size > 0 && (
           <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-800 text-sm">
             <span className="text-indigo-700 dark:text-indigo-400 font-medium">{selected.size} selected</span>
-            <button onClick={() => moveMessages([...selected], "Trash")} className="text-red-600 hover:text-red-800 flex items-center gap-1 text-xs"><Trash2 size={12} /> Delete</button>
+            <button onClick={() => handleDelete([...selected])} className="text-red-600 hover:text-red-800 flex items-center gap-1 text-xs"><Trash2 size={12} /> {isTrashOrJunk ? "Delete Forever" : "Delete"}</button>
             <button onClick={() => moveMessages([...selected], "Archive")} className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"><Archive size={12} /> Archive</button>
             <button onClick={() => flagMessages([...selected], "\\Seen", true)} className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-xs"><MailCheck size={12} /> Read</button>
             <button onClick={() => flagMessages([...selected], "\\Seen", false)} className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-xs"><MailOpen size={12} /> Unread</button>
@@ -271,7 +283,7 @@ export function WebmailApp() {
                     <button onClick={() => startReply(selectedMsg, "replyAll")} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded" title="Reply All"><ReplyAll size={16} /></button>
                     <button onClick={() => startReply(selectedMsg, "forward")} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded" title="Forward"><Forward size={16} /></button>
                     <div className="w-px h-4 bg-gray-200 dark:bg-slate-600 mx-1" />
-                    <button onClick={() => moveMessages([selectedMsg.uid], "Trash")} className="p-1.5 text-gray-400 hover:text-red-500 rounded" title="Delete"><Trash2 size={16} /></button>
+                    <button onClick={() => handleDelete([selectedMsg.uid])} className="p-1.5 text-gray-400 hover:text-red-500 rounded" title={isTrashOrJunk ? "Delete Forever" : "Delete"}><Trash2 size={16} /></button>
                     <button onClick={() => moveMessages([selectedMsg.uid], "Archive")} className="p-1.5 text-gray-400 hover:text-blue-500 rounded" title="Archive"><Archive size={16} /></button>
                     <button onClick={() => flagMessages([selectedMsg.uid], "\\Flagged", !selectedMsg.flagged)} className={`p-1.5 rounded ${selectedMsg.flagged ? "text-yellow-500" : "text-gray-400 hover:text-yellow-500"}`} title="Star"><Star size={16} /></button>
                   </div>
