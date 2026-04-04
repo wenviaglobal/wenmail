@@ -218,12 +218,17 @@ export async function webmailRoutes(app: FastifyInstance) {
           text: parsed.text || "",
           html: parsed.html || "",
           contentType: parsed.html ? "html" : "text",
-          attachments: (parsed.attachments || []).map((att, i) => ({
-            id: i,
-            filename: att.filename || `attachment-${i}`,
-            contentType: att.contentType || "application/octet-stream",
-            size: att.size || 0,
-          })),
+          attachments: (parsed.attachments || []).map((att, i) => {
+            const isImage = (att.contentType || "").startsWith("image/");
+            return {
+              id: i,
+              filename: att.filename || `attachment-${i}`,
+              contentType: att.contentType || "application/octet-stream",
+              size: att.size || 0,
+              isImage,
+              preview: isImage ? `data:${att.contentType};base64,${att.content.toString("base64")}` : undefined,
+            };
+          }),
           inReplyTo: parsed.inReplyTo || null,
           references: parsed.references ? (Array.isArray(parsed.references) ? parsed.references.join(" ") : parsed.references) : null,
         };
@@ -446,6 +451,71 @@ export async function webmailRoutes(app: FastifyInstance) {
     } finally {
       await client.logout();
     }
+  });
+
+  // ==========================================
+  // DRAFTS
+  // ==========================================
+
+  // POST /api/webmail/draft — save draft to Drafts folder
+  app.post("/draft", async (request, reply) => {
+    const session = getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const body = composeSchema.parse(request.body);
+    const MailComposer = (await import("nodemailer/lib/mail-composer/index.js")).default;
+
+    const mailOptions: any = {
+      from: session.email,
+      to: body.to || undefined,
+      subject: body.subject,
+      text: body.text,
+      html: body.html || undefined,
+      cc: body.cc || undefined,
+    };
+
+    if (body.attachments?.length) {
+      mailOptions.attachments = body.attachments.map((att: any) => ({
+        filename: att.filename,
+        content: Buffer.from(att.content, "base64"),
+        contentType: att.contentType,
+      }));
+    }
+
+    const composer = new MailComposer(mailOptions);
+    const raw = await new Promise<Buffer>((resolve, reject) => {
+      composer.compile().build((err: Error | null, message: Buffer) => {
+        if (err) reject(err); else resolve(message);
+      });
+    });
+
+    const client = await createImapClient(session.email, session.password);
+    try {
+      const result = await client.append("Drafts", raw, ["\\Draft", "\\Seen"]);
+      return { message: "Draft saved", uid: result && typeof result === "object" ? (result as any).uid : undefined };
+    } finally {
+      await client.logout();
+    }
+  });
+
+  // DELETE /api/webmail/draft/:uid — delete a draft
+  app.delete<{ Params: { uid: string } }>("/draft/:uid", async (request, reply) => {
+    const session = getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const uid = parseInt(request.params.uid);
+    const client = await createImapClient(session.email, session.password);
+    try {
+      const lock = await client.getMailboxLock("Drafts");
+      try {
+        await client.messageDelete({ uid }, { uid: true });
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout();
+    }
+    return { message: "Draft deleted" };
   });
 }
 

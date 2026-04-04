@@ -4,7 +4,7 @@ import {
   Mail, Inbox, Send, Trash2, Archive, Star, AlertTriangle, RefreshCw,
   Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
   Forward, Paperclip, Download, CheckSquare, Square, StarOff,
-  MailOpen, MailCheck,
+  MailOpen, MailCheck, Settings, Save,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 
@@ -18,7 +18,7 @@ async function api(path: string, opts?: RequestInit) {
   return res.json();
 }
 
-interface Attachment { id: number; filename: string; contentType: string; size: number; }
+interface Attachment { id: number; filename: string; contentType: string; size: number; isImage?: boolean; preview?: string; }
 interface MsgSummary {
   uid: number; from: { name: string; address: string } | null;
   to: { name: string; address: string }[]; subject: string; date: string | null;
@@ -57,12 +57,13 @@ export function WebmailApp() {
   const [messages, setMessages] = useState<MsgSummary[]>([]);
   const [selectedMsg, setSelectedMsg] = useState<MsgDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [compose, setCompose] = useState<{ mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail } | null>(null);
+  const [compose, setCompose] = useState<{ mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail; draftUid?: number } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const loadFolders = useCallback(async () => { try { setFolders(await api("/folders")); } catch {} }, []);
   const loadMessages = useCallback(async (folder: string) => {
@@ -80,6 +81,12 @@ export function WebmailApp() {
     setLoading(true);
     try {
       const d = await api(`/message/${uid}?folder=${encodeURIComponent(currentFolder)}`);
+      // If opening a draft, open in compose mode to continue editing
+      if (currentFolder === "Drafts") {
+        setCompose({ mode: "new", original: d, draftUid: uid });
+        setLoading(false);
+        return;
+      }
       setSelectedMsg(d);
       setMessages(prev => prev.map(m => m.uid === uid ? { ...m, seen: true } : m));
     } catch {}
@@ -145,7 +152,10 @@ export function WebmailApp() {
           <p className="text-xs text-gray-500 dark:text-slate-500 truncate mb-2">{email}</p>
           <div className="flex items-center justify-between">
             <button onClick={handleLogout} className="text-xs text-gray-500 dark:text-slate-400 hover:text-red-600 flex items-center gap-1"><LogOut size={14} /> Logout</button>
-            <ThemeToggle />
+            <div className="flex items-center gap-1">
+              <button onClick={() => { setShowSettings(true); setSidebarOpen(false); }} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Settings"><Settings size={16} /></button>
+              <ThemeToggle />
+            </div>
           </div>
         </div>
       </aside>
@@ -260,16 +270,35 @@ export function WebmailApp() {
 
               {/* Attachments bar */}
               {selectedMsg.attachments?.length > 0 && (
-                <div className="px-4 md:px-6 py-2 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80 flex items-center gap-2 flex-wrap">
-                  <Paperclip size={14} className="text-gray-400 shrink-0" />
-                  {selectedMsg.attachments.map(att => (
-                    <a key={att.id}
-                      href={`${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`}
-                      target="_blank" rel="noopener"
-                      className="inline-flex items-center gap-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
-                      <Download size={10} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
-                    </a>
-                  ))}
+                <div className="px-4 md:px-6 py-3 border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <Paperclip size={14} className="text-gray-400 shrink-0" />
+                    <span className="text-xs text-gray-500 dark:text-slate-400">{selectedMsg.attachments.length} attachment(s)</span>
+                  </div>
+                  {/* Image previews */}
+                  {selectedMsg.attachments.some(a => a.isImage && a.preview) && (
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      {selectedMsg.attachments.filter(a => a.isImage && a.preview).map(att => (
+                        <a key={att.id}
+                          href={`${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`}
+                          target="_blank" rel="noopener" className="block">
+                          <img src={att.preview} alt={att.filename}
+                            className="max-h-40 max-w-60 rounded border border-gray-200 dark:border-slate-600 object-contain bg-white dark:bg-slate-700 cursor-pointer hover:opacity-90" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {/* File download links */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {selectedMsg.attachments.map(att => (
+                      <a key={att.id}
+                        href={`${API}/message/${selectedMsg.uid}/attachment/${att.id}?folder=${encodeURIComponent(currentFolder)}&token=${localStorage.getItem("webmailToken")}`}
+                        target="_blank" rel="noopener"
+                        className="inline-flex items-center gap-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
+                        <Download size={10} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -303,6 +332,9 @@ export function WebmailApp() {
 
       {/* Compose modal */}
       {compose && <ComposeModal email={email} compose={compose} onClose={() => setCompose(null)} onSent={() => { setCompose(null); loadFolders(); loadMessages(currentFolder); }} />}
+
+      {/* Settings modal */}
+      {showSettings && <SettingsModal email={email} onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
@@ -313,7 +345,7 @@ export function WebmailApp() {
 
 interface ComposeProps {
   email: string;
-  compose: { mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail };
+  compose: { mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail; draftUid?: number };
   onClose: () => void;
   onSent: () => void;
 }
@@ -323,8 +355,11 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachments] = useState<{ filename: string; content: string; contentType: string }[]>([]);
 
+  const isDraft = !!compose.draftUid;
+
   const prefillTo = () => {
     if (!original) return "";
+    if (isDraft) return original.to?.map(t => t.address).join(", ") || "";
     if (mode === "reply") return original.replyTo?.[0]?.address || original.from?.address || "";
     if (mode === "replyAll") {
       const addrs = [original.from?.address, ...original.to.map(t => t.address), ...(original.cc || []).map(t => t.address)].filter(a => a && a !== email);
@@ -334,11 +369,13 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   };
   const prefillSubject = () => {
     if (!original) return "";
+    if (isDraft) return original.subject || "";
     const subj = original.subject.replace(/^(Re:|Fwd?:)\s*/gi, "").trim();
     return mode === "forward" ? `Fwd: ${subj}` : `Re: ${subj}`;
   };
   const prefillBody = () => {
     if (!original) return "";
+    if (isDraft) return original.text || "";
     const date = original.date ? new Date(original.date).toLocaleString() : "";
     const from = addrStr(original.from);
     const header = `\n\nOn ${date}, ${from} wrote:\n`;
@@ -350,7 +387,21 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const [subject, setSubject] = useState(prefillSubject);
   const [text, setText] = useState(prefillBody);
   const [sending, setSending] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
+
+  async function handleSaveDraft() {
+    setSavingDraft(true); setError("");
+    try {
+      await api("/draft", { method: "POST", body: JSON.stringify({ to, subject, text, attachments: attachments.length > 0 ? attachments : undefined }) });
+      // Delete old draft if editing one
+      if (compose.draftUid) {
+        await api(`/draft/${compose.draftUid}`, { method: "DELETE" }).catch(() => {});
+      }
+      onSent(); // Closes modal and refreshes
+    } catch { setError("Failed to save draft"); }
+    setSavingDraft(false);
+  }
 
   function handleFiles(files: FileList | null) {
     if (!files) return;
@@ -376,6 +427,10 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
         inReplyTo: original?.messageId || undefined,
         references: original?.references ? `${original.references} ${original.messageId}` : original?.messageId || undefined,
       })});
+      // Delete draft after successful send
+      if (compose.draftUid) {
+        await api(`/draft/${compose.draftUid}`, { method: "DELETE" }).catch(() => {});
+      }
       onSent();
     } catch { setError("Failed to send email"); }
     setSending(false);
@@ -386,7 +441,7 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
       <div className="bg-white dark:bg-slate-800 w-full md:w-[680px] md:rounded-xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[80vh]">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700">
           <h3 className="font-semibold dark:text-white">
-            {mode === "new" ? "New Message" : mode === "reply" ? "Reply" : mode === "replyAll" ? "Reply All" : "Forward"}
+            {isDraft ? "Edit Draft" : mode === "new" ? "New Message" : mode === "reply" ? "Reply" : mode === "replyAll" ? "Reply All" : "Forward"}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
@@ -432,10 +487,102 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
               <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Attach file">
                 <Paperclip size={18} />
               </button>
+              <button type="button" onClick={handleSaveDraft} disabled={savingDraft}
+                className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded flex items-center gap-1 text-sm" title="Save as Draft">
+                <Save size={16} /> {savingDraft ? "Saving..." : "Draft"}
+              </button>
             </div>
             <button type="button" onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Discard</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// SETTINGS MODAL
+// ==========================================
+
+function SettingsModal({ email, onClose }: { email: string; onClose: () => void }) {
+  const hostname = "mail.wenvia.global";
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+          <h3 className="font-semibold dark:text-white flex items-center gap-2"><Settings size={18} /> Settings</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+
+        <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
+          {/* Account info */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Account</h4>
+            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500 dark:text-slate-400">Email</span>
+                <span className="font-medium dark:text-white">{email}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* IMAP Settings */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Incoming Mail (IMAP)</h4>
+            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Server</span><code className="font-medium dark:text-white">{hostname}</code></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Port</span><code className="font-medium dark:text-white">993</code></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Security</span><code className="font-medium dark:text-white">SSL/TLS</code></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Username</span><code className="font-medium dark:text-white">{email}</code></div>
+            </div>
+          </div>
+
+          {/* SMTP Settings */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Outgoing Mail (SMTP)</h4>
+            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Server</span><code className="font-medium dark:text-white">{hostname}</code></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Port</span><code className="font-medium dark:text-white">587</code></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Security</span><code className="font-medium dark:text-white">STARTTLS</code></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Username</span><code className="font-medium dark:text-white">{email}</code></div>
+            </div>
+          </div>
+
+          {/* Compatible Apps */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Compatible Apps</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {["Thunderbird", "Microsoft Outlook", "Apple Mail", "Gmail App", "Outlook Mobile", "iPhone Mail"].map(app => (
+                <div key={app} className="bg-gray-50 dark:bg-slate-700/50 rounded px-3 py-2 text-xs text-gray-600 dark:text-slate-400">{app}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* Webmail Info */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Webmail</h4>
+            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 text-sm">
+              <p className="text-gray-500 dark:text-slate-400">Access your email from any browser at:</p>
+              <code className="text-indigo-600 dark:text-indigo-400 font-medium">https://{hostname}</code>
+            </div>
+          </div>
+
+          {/* Keyboard Shortcuts */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Tips</h4>
+            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-1 text-xs text-gray-500 dark:text-slate-400">
+              <p>Use the checkbox to select multiple messages for bulk actions</p>
+              <p>Click the star icon to flag important messages</p>
+              <p>Click on a draft to continue editing and sending it</p>
+              <p>Attachments up to 25 MB per file are supported</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-slate-700 text-right">
+          <button onClick={onClose} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Close</button>
+        </div>
       </div>
     </div>
   );
