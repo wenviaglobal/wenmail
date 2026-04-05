@@ -76,7 +76,7 @@ export function WebmailApp() {
   const [searching, setSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [starredFilter, setStarredFilter] = useState(false);
-  const PAGE_SIZE = 30;
+  const PAGE_SIZE = parseInt(localStorage.getItem("wenmail-page-size") || "30") || 30;
 
   const loadFolders = useCallback(async () => { try { setFolders(await api("/folders")); } catch {} }, []);
   const loadMessages = useCallback(async (folder: string, p = 1) => {
@@ -107,8 +107,9 @@ export function WebmailApp() {
   }
 
   async function moveMessages(uids: number[], toFolder: string) {
+    if (toFolder === "Archive") await api("/ensure-folder", { method: "POST", body: JSON.stringify({ folder: toFolder }) }).catch(() => {});
     await api("/move", { method: "POST", body: JSON.stringify({ uids, fromFolder: currentFolder, toFolder }) });
-    setSelectedMsg(null); setSelected(new Set()); loadMessages(currentFolder); loadFolders();
+    setSelectedMsg(null); setSelected(new Set()); loadMessages(currentFolder, page); loadFolders();
   }
 
   async function deleteMessages(uids: number[]) {
@@ -417,14 +418,18 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
     const subj = original.subject.replace(/^(Re:|Fwd?:)\s*/gi, "").trim();
     return mode === "forward" ? `Fwd: ${subj}` : `Re: ${subj}`;
   };
+  const signature = localStorage.getItem("wenmail-signature") || "";
+  const sigBlock = signature ? `\n\n--\n${signature}` : "";
+
   const prefillBody = () => {
-    if (!original) return "";
+    if (!original) return sigBlock;
     if (isDraft) return original.text || "";
     const date = original.date ? new Date(original.date).toLocaleString() : "";
     const from = addrStr(original.from);
     const header = `\n\nOn ${date}, ${from} wrote:\n`;
     const quoted = (original.text || "").split("\n").map(l => `> ${l}`).join("\n");
-    return mode === "forward" ? `\n\n---------- Forwarded message ----------\nFrom: ${from}\nDate: ${date}\nSubject: ${original.subject}\nTo: ${original.to.map(t => t.address).join(", ")}\n\n${original.text || ""}` : `${header}${quoted}`;
+    if (mode === "forward") return `${sigBlock}\n\n---------- Forwarded message ----------\nFrom: ${from}\nDate: ${date}\nSubject: ${original.subject}\nTo: ${original.to.map(t => t.address).join(", ")}\n\n${original.text || ""}`;
+    return `${sigBlock}${header}${quoted}`;
   };
 
   const [to, setTo] = useState(prefillTo);
@@ -550,6 +555,41 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
 
 function SettingsModal({ email, onClose }: { email: string; onClose: () => void }) {
   const hostname = "mail.wenvia.global";
+  const [tab, setTab] = useState<"general" | "compose" | "account" | "setup">("general");
+  const [pageSize, setPageSize] = useState(localStorage.getItem("wenmail-page-size") || "30");
+  const [sig, setSig] = useState(localStorage.getItem("wenmail-signature") || "");
+  const [displayName, setDisplayName] = useState(localStorage.getItem("wenmail-display-name") || "");
+  const [saved, setSaved] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+
+  function saveSettings() {
+    localStorage.setItem("wenmail-page-size", pageSize);
+    localStorage.setItem("wenmail-signature", sig);
+    localStorage.setItem("wenmail-display-name", displayName);
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwLoading(true); setPwMsg("");
+    try {
+      const res = await api("/change-password", { method: "POST", body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }) });
+      if (res.token) localStorage.setItem("webmailToken", res.token);
+      setPwMsg("Password changed successfully");
+      setCurrentPw(""); setNewPw("");
+    } catch { setPwMsg("Failed — check current password"); }
+    setPwLoading(false);
+  }
+
+  const tabs = [
+    { id: "general" as const, label: "General" },
+    { id: "compose" as const, label: "Compose" },
+    { id: "account" as const, label: "Account" },
+    { id: "setup" as const, label: "Mail Setup" },
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -559,73 +599,106 @@ function SettingsModal({ email, onClose }: { email: string; onClose: () => void 
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
 
-        <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
-          {/* Account info */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Account</h4>
-            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-slate-400">Email</span>
-                <span className="font-medium dark:text-white">{email}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* IMAP Settings */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Incoming Mail (IMAP)</h4>
-            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Server</span><code className="font-medium dark:text-white">{hostname}</code></div>
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Port</span><code className="font-medium dark:text-white">993</code></div>
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Security</span><code className="font-medium dark:text-white">SSL/TLS</code></div>
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Username</span><code className="font-medium dark:text-white">{email}</code></div>
-            </div>
-          </div>
-
-          {/* SMTP Settings */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Outgoing Mail (SMTP)</h4>
-            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Server</span><code className="font-medium dark:text-white">{hostname}</code></div>
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Port</span><code className="font-medium dark:text-white">587</code></div>
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Security</span><code className="font-medium dark:text-white">STARTTLS</code></div>
-              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Username</span><code className="font-medium dark:text-white">{email}</code></div>
-            </div>
-          </div>
-
-          {/* Compatible Apps */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Compatible Apps</h4>
-            <div className="grid grid-cols-2 gap-2">
-              {["Thunderbird", "Microsoft Outlook", "Apple Mail", "Gmail App", "Outlook Mobile", "iPhone Mail"].map(app => (
-                <div key={app} className="bg-gray-50 dark:bg-slate-700/50 rounded px-3 py-2 text-xs text-gray-600 dark:text-slate-400">{app}</div>
-              ))}
-            </div>
-          </div>
-
-          {/* Webmail Info */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Webmail</h4>
-            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 text-sm">
-              <p className="text-gray-500 dark:text-slate-400">Access your email from any browser at:</p>
-              <code className="text-indigo-600 dark:text-indigo-400 font-medium">https://{hostname}</code>
-            </div>
-          </div>
-
-          {/* Keyboard Shortcuts */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Tips</h4>
-            <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-1 text-xs text-gray-500 dark:text-slate-400">
-              <p>Use the checkbox to select multiple messages for bulk actions</p>
-              <p>Click the star icon to flag important messages</p>
-              <p>Click on a draft to continue editing and sending it</p>
-              <p>Attachments up to 25 MB per file are supported</p>
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 dark:border-slate-700 px-5">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition ${tab === t.id ? "border-indigo-600 text-indigo-600 dark:text-indigo-400" : "border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700"}`}>
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-slate-700 text-right">
-          <button onClick={onClose} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Close</button>
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {tab === "general" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Display Name</label>
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your Name"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" />
+                <p className="text-xs text-gray-400 mt-1">Shown as sender name in outgoing emails</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Messages Per Page</label>
+                <select value={pageSize} onChange={e => setPageSize(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm">
+                  <option value="20">20</option>
+                  <option value="30">30</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {tab === "compose" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Email Signature</label>
+              <textarea value={sig} onChange={e => setSig(e.target.value)} rows={5} placeholder="Your signature here..."
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm resize-none" />
+              <p className="text-xs text-gray-400 mt-1">Appended to every new email and reply. Leave blank for no signature.</p>
+            </div>
+          )}
+
+          {tab === "account" && (
+            <>
+              <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Email</span><span className="font-medium dark:text-white">{email}</span></div>
+              </div>
+              <form onSubmit={changePassword} className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300">Change Password</h4>
+                <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} placeholder="Current password"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required />
+                <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="New password (min 8 chars)"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required />
+                {pwMsg && <p className={`text-sm ${pwMsg.includes("success") ? "text-green-600" : "text-red-500"}`}>{pwMsg}</p>}
+                <button type="submit" disabled={newPw.length < 8 || pwLoading}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
+                  {pwLoading ? "Changing..." : "Change Password"}
+                </button>
+              </form>
+            </>
+          )}
+
+          {tab === "setup" && (
+            <>
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">Incoming Mail (IMAP)</h4>
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Server</span><code className="dark:text-white">{hostname}</code></div>
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Port</span><code className="dark:text-white">993</code></div>
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Security</span><code className="dark:text-white">SSL/TLS</code></div>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">Outgoing Mail (SMTP)</h4>
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Server</span><code className="dark:text-white">{hostname}</code></div>
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Port</span><code className="dark:text-white">587</code></div>
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Security</span><code className="dark:text-white">STARTTLS</code></div>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">Compatible Apps</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {["Thunderbird", "Outlook", "Apple Mail", "Gmail App", "Outlook Mobile", "iPhone Mail"].map(a => (
+                    <div key={a} className="bg-gray-50 dark:bg-slate-700/50 rounded px-3 py-1.5 text-xs text-gray-600 dark:text-slate-400">{a}</div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-slate-700 flex items-center justify-between">
+          {saved && <span className="text-green-600 text-sm">Settings saved!</span>}
+          {!saved && <span />}
+          <div className="flex gap-2">
+            {(tab === "general" || tab === "compose") && (
+              <button onClick={saveSettings} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 flex items-center gap-1"><Save size={14} /> Save</button>
+            )}
+            <button onClick={onClose} className="border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700">Close</button>
+          </div>
         </div>
       </div>
     </div>

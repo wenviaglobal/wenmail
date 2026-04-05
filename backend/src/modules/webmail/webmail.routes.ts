@@ -428,4 +428,66 @@ export async function webmailRoutes(app: FastifyInstance) {
     } finally { lock.release(); }
     return { message: "Draft deleted" };
   });
+
+  // ==========================================
+  // CHANGE PASSWORD
+  // ==========================================
+
+  app.post("/change-password", async (request, reply) => {
+    const session = getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8).max(128),
+    }).parse(request.body);
+
+    if (currentPassword !== session.password) {
+      return reply.status(400).send({ message: "Current password is incorrect" });
+    }
+
+    // Update password in DB via doveadm
+    const { hashPasswordForDovecot } = await import("../../lib/password.js");
+    const { db } = await import("../../db/index.js");
+    const { mailboxes } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+
+    const email = session.email;
+    const [localPart, domain] = email.split("@");
+    const newHash = hashPasswordForDovecot(newPassword);
+
+    // Find and update mailbox
+    const { domains } = await import("../../db/schema.js");
+    const domainRow = await db.query.domains.findFirst({ where: eq(domains.domainName, domain) });
+    if (!domainRow) return reply.status(404).send({ message: "Domain not found" });
+
+    await db.update(mailboxes).set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(and(eq(mailboxes.domainId, domainRow.id), eq(mailboxes.localPart, localPart)));
+
+    // Update session with new password
+    const token = getSessionToken(request as any)!;
+    destroySession(token);
+    const newToken = createSession(email, newPassword);
+
+    return { message: "Password changed successfully", token: newToken };
+  });
+
+  // ==========================================
+  // ENSURE FOLDER EXISTS (for Archive)
+  // ==========================================
+
+  app.post("/ensure-folder", async (request, reply) => {
+    const ctx = await authed(request, reply);
+    if (!ctx) return;
+    const { client } = ctx;
+
+    const { folder } = z.object({ folder: z.string().min(1) }).parse(request.body);
+
+    try {
+      await client.mailboxCreate(folder);
+    } catch {
+      // Folder already exists — fine
+    }
+    return { message: "Folder ready" };
+  });
 }
