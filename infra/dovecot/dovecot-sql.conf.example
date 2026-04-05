@@ -4,6 +4,7 @@ connect = host=127.0.0.1 dbname=emailplatform user=mailplatform password=<DB_PAS
 default_pass_scheme = SHA512-CRYPT
 
 # Password lookup — authenticate user
+# Only allows login if domain is verified with DKIM+SPF configured
 password_query = \
   SELECT \
     CONCAT(m.local_part, '@', d.domain_name) AS user, \
@@ -12,7 +13,11 @@ password_query = \
   JOIN domains d ON m.domain_id = d.id \
   WHERE m.local_part = '%n' \
     AND d.domain_name = '%d' \
-    AND m.status = 'active'
+    AND m.status = 'active' \
+    AND d.status = 'active' \
+    AND d.verified = true \
+    AND d.dkim_configured = true \
+    AND d.spf_configured = true
 
 # User lookup — find mailbox location
 user_query = \
@@ -25,7 +30,8 @@ user_query = \
   JOIN domains d ON m.domain_id = d.id \
   WHERE m.local_part = '%n' \
     AND d.domain_name = '%d' \
-    AND m.status = 'active'
+    AND m.status = 'active' \
+    AND d.status = 'active'
 
 # Iterate query — for quota sync
 iterate_query = \
@@ -33,4 +39,6 @@ iterate_query = \
     CONCAT(m.local_part, '@', d.domain_name) AS user \
   FROM mailboxes m \
   JOIN domains d ON m.domain_id = d.id \
-  WHERE m.status = 'active'
+  WHERE m.status = 'active' \
+    AND d.status = 'active' \
+    AND d.verified = true

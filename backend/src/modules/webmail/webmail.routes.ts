@@ -70,6 +70,22 @@ export async function webmailRoutes(app: FastifyInstance) {
 
   app.post("/login", async (request, reply) => {
     const { email, password } = loginSchema.parse(request.body);
+
+    // Check domain verification status before IMAP auth
+    const [, emailDomain] = email.split("@");
+    if (emailDomain) {
+      const { db } = await import("../../db/index.js");
+      const { domains } = await import("../../db/schema.js");
+      const { eq } = await import("drizzle-orm");
+      const domain = await db.query.domains.findFirst({ where: eq(domains.domainName, emailDomain) });
+      if (domain && !domain.verified) {
+        return reply.status(403).send({ message: "Domain not verified. Please complete DNS setup before using email." });
+      }
+      if (domain && (!domain.dkimConfigured || !domain.spfConfigured)) {
+        return reply.status(403).send({ message: "Domain DNS incomplete. DKIM and SPF must be configured before using email." });
+      }
+    }
+
     const valid = await validateCredentials(email, password);
     if (!valid) return reply.status(401).send({ message: "Invalid email or password" });
     const token = await createSession(email, password);
