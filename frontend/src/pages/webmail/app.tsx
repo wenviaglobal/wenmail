@@ -70,15 +70,18 @@ export function WebmailApp() {
   const [compose, setCompose] = useState<{ mode: "new" | "reply" | "replyAll" | "forward"; original?: MsgDetail; draftUid?: number } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [starredFilter, setStarredFilter] = useState(false);
+  const PAGE_SIZE = 30;
 
   const loadFolders = useCallback(async () => { try { setFolders(await api("/folders")); } catch {} }, []);
-  const loadMessages = useCallback(async (folder: string) => {
+  const loadMessages = useCallback(async (folder: string, p = 1) => {
     setLoading(true); setSelectedMsg(null); setSelected(new Set());
-    try { const d = await api(`/messages?folder=${encodeURIComponent(folder)}`); setMessages(d.messages || []); setTotal(d.total || 0); } catch {}
+    try { const d = await api(`/messages?folder=${encodeURIComponent(folder)}&page=${p}&limit=${PAGE_SIZE}`); setMessages(d.messages || []); setTotal(d.total || 0); } catch {}
     setLoading(false);
   }, []);
 
@@ -132,10 +135,13 @@ export function WebmailApp() {
     setSearching(false);
   }
 
-  function selectFolder(path: string) { setCurrentFolder(path); setSearchQuery(""); loadMessages(path); setSidebarOpen(false); }
+  function selectFolder(path: string) { setCurrentFolder(path); setSearchQuery(""); setPage(1); setStarredFilter(false); loadMessages(path, 1); setSidebarOpen(false); }
+  function goToPage(p: number) { setPage(p); loadMessages(currentFolder, p); }
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const displayMessages = starredFilter ? messages.filter(m => m.flagged) : messages;
   function handleLogout() { api("/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem("webmailToken"); localStorage.removeItem("webmailEmail"); navigate("/mail/login"); }
   function toggleSelect(uid: number) { setSelected(prev => { const s = new Set(prev); s.has(uid) ? s.delete(uid) : s.add(uid); return s; }); }
-  function selectAll() { setSelected(prev => prev.size === messages.length ? new Set() : new Set(messages.map(m => m.uid))); }
+  function selectAll() { setSelected(prev => prev.size === displayMessages.length ? new Set() : new Set(displayMessages.map(m => m.uid))); }
 
   function startReply(msg: MsgDetail, mode: "reply" | "replyAll" | "forward") { setCompose({ mode, original: msg }); }
 
@@ -163,12 +169,17 @@ export function WebmailApp() {
             const Icon = folderIcons[f.specialUse || ""] || Folder;
             return (
               <button key={f.path} onClick={() => selectFolder(f.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${f.path === currentFolder ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"}`}>
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${f.path === currentFolder && !starredFilter ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"}`}>
                 <Icon size={16} /><span className="flex-1 text-left">{f.name}</span>
                 {f.unseen > 0 && <span className="bg-indigo-600 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">{f.unseen}</span>}
               </button>
             );
           })}
+          {/* Starred filter */}
+          <button onClick={() => { setStarredFilter(!starredFilter); setSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${starredFilter ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 font-medium" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"}`}>
+            <Star size={16} /><span className="flex-1 text-left">Starred</span>
+          </button>
         </nav>
         <div className="p-3 border-t border-gray-200 dark:border-slate-700">
           <p className="text-xs text-gray-500 dark:text-slate-500 truncate mb-2">{email}</p>
@@ -187,7 +198,7 @@ export function WebmailApp() {
         {/* Top bar */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           <button className="lg:hidden text-gray-500 dark:text-slate-400" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
-          <h2 className="font-semibold text-gray-800 dark:text-white text-sm">{currentFolder === "INBOX" ? "Inbox" : currentFolder}</h2>
+          <h2 className="font-semibold text-gray-800 dark:text-white text-sm">{starredFilter ? "Starred" : currentFolder === "INBOX" ? "Inbox" : currentFolder}</h2>
           <div className="flex-1" />
           {/* Search */}
           <form onSubmit={e => { e.preventDefault(); doSearch(); }} className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded-lg px-2 py-1">
@@ -196,7 +207,7 @@ export function WebmailApp() {
               className="bg-transparent text-sm outline-none w-24 md:w-48 dark:text-white" />
           </form>
           <span className="text-xs text-gray-400 dark:text-slate-500 hidden md:block">{total}</span>
-          <button onClick={() => { setSearchQuery(""); loadMessages(currentFolder); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white">
+          <button onClick={() => { setSearchQuery(""); setStarredFilter(false); loadMessages(currentFolder, page); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white">
             <RefreshCw size={14} className={loading || searching ? "animate-spin" : ""} />
           </button>
         </div>
@@ -220,17 +231,17 @@ export function WebmailApp() {
             {/* Select all */}
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-slate-700/50 bg-gray-50 dark:bg-slate-800">
               <button onClick={selectAll} className="text-gray-400 hover:text-gray-600">
-                {selected.size === messages.length && messages.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
+                {selected.size === displayMessages.length && displayMessages.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
               </button>
-              <span className="text-xs text-gray-400">{messages.length > 0 ? `${messages.length} messages` : ""}</span>
+              <span className="text-xs text-gray-400">{displayMessages.length > 0 ? `${displayMessages.length} messages` : ""}</span>
             </div>
 
-            {messages.length === 0 && !loading && (
+            {displayMessages.length === 0 && !loading && (
               <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-slate-500 text-sm">
-                {searchQuery ? "No results" : "No messages"}
+                {starredFilter ? "No starred messages" : searchQuery ? "No results" : "No messages"}
               </div>
             )}
-            {messages.map(msg => (
+            {displayMessages.map(msg => (
               <div key={msg.uid}
                 className={`flex items-start gap-2 px-3 py-2.5 border-b border-gray-100 dark:border-slate-700/50 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition ${selectedMsg?.uid === msg.uid ? "bg-indigo-50 dark:bg-indigo-900/20" : ""} ${!msg.seen ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
                 <button onClick={e => { e.stopPropagation(); toggleSelect(msg.uid); }} className="mt-1 text-gray-300 hover:text-gray-500 shrink-0">
@@ -256,6 +267,17 @@ export function WebmailApp() {
                 </div>
               </div>
             ))}
+
+            {/* Pagination */}
+            {totalPages > 1 && !starredFilter && (
+              <div className="flex items-center justify-center gap-2 py-2 border-t border-gray-100 dark:border-slate-700/50 bg-gray-50 dark:bg-slate-800 shrink-0">
+                <button onClick={() => goToPage(page - 1)} disabled={page <= 1}
+                  className="px-2 py-1 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 disabled:opacity-30">&lt; Prev</button>
+                <span className="text-xs text-gray-400 dark:text-slate-500">Page {page} of {totalPages}</span>
+                <button onClick={() => goToPage(page + 1)} disabled={page >= totalPages}
+                  className="px-2 py-1 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 disabled:opacity-30">Next &gt;</button>
+              </div>
+            )}
           </div>
 
           {/* Message detail */}
