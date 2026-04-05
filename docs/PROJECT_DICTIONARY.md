@@ -68,8 +68,12 @@ Key Files:
   conf.d/10-auth.conf        -> authentication mechanisms
   conf.d/10-mail.conf        -> mail storage location (Maildir)
   conf.d/10-ssl.conf         -> TLS certificates
-  conf.d/20-imap.conf        -> IMAP protocol settings
+  conf.d/20-imap.conf        -> IMAP protocol settings (mail_max_userip_connections = 50)
   conf.d/90-quota.conf       -> per-user storage quotas
+Domain Verification Enforcement:
+  SQL auth query requires d.verified=true AND d.dkim_configured=true AND d.spf_configured=true
+  Unverified domains cannot authenticate for IMAP at all
+  Webmail login returns a specific error explaining the domain is not verified
 ```
 
 ### Rspamd
@@ -77,12 +81,35 @@ Key Files:
 Location:    /etc/rspamd/ (host)
 Type:        infra (security)
 Depends On:  Redis (for stats/bayes)
-Used By:     Postfix (milter)
-Description: Spam filter — scores incoming emails, rejects spam
+Used By:     Postfix (milter), Admin UI (abuse monitor, ban management)
+Description: Spam filter — scores incoming emails, rejects spam, per-user rate limiting
 Key Files:
-  local.d/worker-proxy.inc   -> Postfix integration
-  local.d/classifier-bayes.conf -> learning spam/ham
-  local.d/dkim_signing.conf  -> DKIM signing rules
+  local.d/worker-proxy.inc       -> Postfix integration
+  local.d/classifier-bayes.conf  -> learning spam/ham
+  local.d/dkim_signing.conf      -> DKIM signing rules
+  local.d/greylist.conf          -> greylisting config (allowlist: Gmail, Outlook, Yahoo, etc.)
+  local.d/rbl.conf               -> RBL/DNSBL checks (Spamhaus, Barracuda, SpamCop)
+  local.d/actions.conf           -> spam score thresholds: reject >15, add_header (junk) >6, greylist >4
+  local.d/ratelimit.conf         -> per-sender rate limits: 3/min, 100/hr
+Anti-Spam Stack:
+  - Greylisting with allowlist for major providers (Gmail, Outlook, Yahoo, etc.)
+  - RBL/DNSBL checks: Spamhaus, Barracuda, SpamCop
+  - Spam score thresholds: reject >15, add to junk >6, greylist >4
+  - Per-user rate limiting: 3 messages/min, 100 messages/hr per sender
+  - Postfix sender verification + HELO checks
+  - Custom blocklist sync from admin UI
+```
+
+### Fail2ban
+```
+Location:    /etc/fail2ban/ (host)
+Type:        infra (security)
+Depends On:  Postfix logs, Dovecot logs, Nginx logs
+Used By:     Admin UI (ban management page)
+Description: Brute-force protection — bans IPs after repeated failed auth
+Config:
+  ignoreip includes 172.22.22.0/24 (gateway) and 172.17.0.0/16 (Docker)
+  Jails: sshd, postfix, dovecot, nginx-http-auth
 ```
 
 ---
@@ -98,7 +125,8 @@ Used By:     Backend API, Postfix (SQL maps), Dovecot (SQL auth)
 Description: Primary data store — all clients, domains, mailboxes, logs, billing, settings
 Database:    emailplatform
 User:        mailplatform
-ORM:         Drizzle ORM (postgres-js driver, max 20 connections)
+ORM:         Drizzle ORM (postgres-js driver, pool = 50 connections)
+Config:      max_connections = 300
 ```
 
 #### Tables Reference
@@ -119,6 +147,7 @@ ORM:         Drizzle ORM (postgres-js driver, max 20 connections)
 | `platform_settings` | Key-value config store | key (PK, varchar 100), value (text), label, group ('server'/'mail'/'branding'), updated_at |
 | `audit_log` | Admin action history | id (bigserial), actor_type, actor_id, action, target_type, target_id, details (JSONB), ip_address (inet) |
 | `password_reset_requests` | DB-based password reset (no email) | id (uuid), client_user_id (FK), client_id (FK), email, status ('pending'/'completed'/'rejected'), resolved_by (FK admins), resolved_at, notes, created_at |
+| `blocklist` | Custom bans (IP/email/domain) | id (uuid), type ('ip'/'email'/'domain'), value, reason, permanent, expires_at, created_by (FK admins), created_at |
 
 #### Unique Constraints
 
@@ -144,6 +173,7 @@ Key Namespaces:
   ratelimit:*        -> @fastify/rate-limit counters
   bull:*             -> BullMQ job queue data
   rspamd:*           -> spam filter bayes/stats (host Rspamd)
+  imap:session:*     -> IMAP connection pool sessions (persistent connections, max 2 per mailbox)
 ```
 
 ---
@@ -185,6 +215,8 @@ Route Registration:
     /api/dashboard        -> dashboardRoutes
     /api/admin            -> billingRoutes
     /api/admin/server     -> serverHealthRoutes
+    /api/admin/abuse      -> abuseRoutes
+    /api/admin/bans       -> bansRoutes
     /api/admin/settings   -> settingsRoutes
   Client Portal routes:
     /api/client-portal/auth -> clientAuthRoutes
@@ -365,6 +397,42 @@ Health Checks:
   redis      -> ping latency, used_memory_human, peak_memory, total keys
   mail       -> systemctl is-active for postfix, dovecot, rspamd; postqueue mail queue count
   disk       -> df -h for / and /var/mail
+  rspamd     -> spam/ham stats, action breakdown
+  fail2ban   -> jail status, banned IP count per jail
+  ssl        -> certificate expiry date per domain
+  imap       -> active Dovecot IMAP connection count
+```
+
+### Module: abuse
+```
+Location:    backend/src/modules/abuse/
+Type:        backend
+Depends On:  Rspamd (HTTP API), PostgreSQL (mail_logs), auth guard
+Used By:     Frontend admin (abuse monitor page at /admin/abuse)
+Description: Abuse monitoring — Rspamd stats, high volume senders, bounce tracking, outbound by client, auto-refresh alerts
+Files:
+  abuse.routes.ts    -> abuse monitoring endpoints (registered under /api/admin/abuse prefix)
+Endpoints:
+  GET    /api/admin/abuse/overview   -> Rspamd stats, high volume senders, bounce rates, outbound by client
+  GET    /api/admin/abuse/alerts     -> active abuse alerts with auto-refresh
+```
+
+### Module: bans
+```
+Location:    backend/src/modules/bans/
+Type:        backend
+Depends On:  Fail2ban (CLI), PostgreSQL (blocklist table), Rspamd (blocklist sync), auth guard
+Used By:     Frontend admin (ban management page at /admin/bans)
+Description: Ban management — Fail2ban IP view/ban/unban, custom blocklist (email/domain/IP) with Rspamd sync, all actions audit logged
+Files:
+  bans.routes.ts     -> ban management endpoints (registered under /api/admin/bans prefix)
+Endpoints:
+  GET    /api/admin/bans/fail2ban         -> list banned IPs from Fail2ban
+  POST   /api/admin/bans/fail2ban         -> manually ban an IP via Fail2ban
+  POST   /api/admin/bans/fail2ban/unban   -> unban an IP from Fail2ban
+  GET    /api/admin/bans/blocklist        -> list custom blocklist entries
+  POST   /api/admin/bans/blocklist        -> add blocklist entry (type: ip/email/domain, value, reason, permanent, expires_at)
+  DELETE /api/admin/bans/blocklist        -> remove blocklist entry
 ```
 
 ### Module: settings
@@ -494,6 +562,25 @@ Files:
                      to newly created mailboxes via local Postfix
 ```
 
+### Webmail API
+```
+Location:    backend/src/modules/webmail/
+Type:        backend
+Description: Custom webmail endpoints — folder management, password change
+IMAP Connection Pooling:
+  - Persistent IMAP connections per session (max 2 per mailbox)
+  - Redis-backed sessions for connection state
+  - 13-83x faster than per-request connections
+Endpoints:
+  POST   /api/webmail/ensure-folder       -> ensure an IMAP folder exists (creates if missing)
+  POST   /api/webmail/change-password     -> change mailbox password from webmail
+Webmail Settings (4 tabs):
+  1. General   -> display name, page size
+  2. Compose   -> signature editor
+  3. Account   -> change password
+  4. Mail Setup -> IMAP/SMTP connection info for external clients
+```
+
 ### Seed Script
 ```
 Location:    backend/src/seed.ts
@@ -538,8 +625,8 @@ Environment Variables:
 Location:    backend/src/db/
 Type:        backend (database)
 Files:
-  index.ts        -> Drizzle ORM instance (postgres-js driver, max 20 connections)
-  schema.ts       -> all table definitions (14 tables) + relations
+  index.ts        -> Drizzle ORM instance (postgres-js driver, pool = 50 connections)
+  schema.ts       -> all table definitions (15 tables) + relations
   migrations/
     0001_*.sql                 -> initial schema
     0002_fuzzy_chimera.sql     -> adds password_reset_requests table
@@ -588,6 +675,8 @@ Admin Routes (inside Layout, requires AdminProtected, all under /admin prefix):
   /admin/logs/audit            -> AuditLogsPage
   /admin/billing               -> AdminBillingPage
   /admin/server                -> ServerHealthPage
+  /admin/abuse                 -> AbuseMonitorPage
+  /admin/bans                  -> BanManagementPage
   /admin/settings              -> AdminSettingsPage
 Client Portal Routes (inside PortalLayout, requires PortalProtected):
   /portal/login                -> PortalLoginPage (public, includes "Forgot Password?" flow)
@@ -701,7 +790,23 @@ Description: Platform-wide billing dashboard — revenue overview, invoice list,
 Location:    frontend/src/pages/admin/server-health.tsx
 Type:        frontend
 Depends On:  GET /api/admin/server/health, GET /api/admin/server/metrics
-Description: System monitoring — CPU, memory, disk, database health, Redis health, mail service status
+Description: System monitoring — CPU, memory, disk, database health, Redis health, mail service status, Rspamd stats, Fail2ban status (jails, banned count), SSL certificate expiry per domain, active IMAP connections
+```
+
+### Page: Abuse Monitor
+```
+Location:    frontend/src/pages/admin/abuse.tsx
+Type:        frontend
+Depends On:  GET /api/admin/abuse/overview, GET /api/admin/abuse/alerts
+Description: Abuse monitoring dashboard — Rspamd stats, high volume senders, bounce tracking, outbound by client, auto-refresh alerts
+```
+
+### Page: Ban Management
+```
+Location:    frontend/src/pages/admin/bans.tsx
+Type:        frontend
+Depends On:  /api/admin/bans/* endpoints
+Description: Ban management — Fail2ban IP view/ban/unban, custom blocklist (email/domain/IP) with Rspamd sync, all actions audit logged
 ```
 
 ### Page: Settings
@@ -725,7 +830,7 @@ Files:
   quota-bar.tsx         -> visual bar showing storage used vs limit
   stat-card.tsx         -> dashboard summary number card
 Admin Sidebar Nav Items:
-  Dashboard, Clients, Domains, Mailboxes, Aliases, Mail Logs, Audit Logs, Billing, Server Health, Settings
+  Dashboard, Clients, Domains, Mailboxes, Aliases, Mail Logs, Audit Logs, Billing, Server Health, Abuse Monitor, Ban Management, Settings
 Icons: lucide-react
 ```
 
@@ -825,6 +930,23 @@ Files:
   nginx.conf        -> production Nginx config for serving the SPA
   Dockerfile        -> multi-stage build (Vite build -> Nginx serve)
   src/index.css     -> TailwindCSS imports + global styles
+```
+
+---
+
+## Infrastructure Configs (Saved)
+
+### infra/
+```
+Location:    infra/ (repo root)
+Type:        config (reference)
+Description: Sanitized copies of production infrastructure configs committed to repo
+Contents:
+  nginx/      -> Nginx site configs (wenvia.global, wpanel, mail)
+  postfix/    -> Postfix main.cf, master.cf
+  dovecot/    -> Dovecot configs (dovecot.conf, dovecot-sql.conf, conf.d/*)
+  rspamd/     -> Rspamd local.d configs (greylisting, RBL, actions, ratelimit, DKIM)
+  fail2ban/   -> Fail2ban jail configs
 ```
 
 ---

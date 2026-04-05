@@ -42,6 +42,8 @@ STRUCTURE:
       dashboard/         → admin dashboard stats
       billing/           → invoices, payments, client controls, client user management
       server-health/     → CPU, RAM, disk, DB, Redis, mail service monitoring
+      abuse/             → Rspamd stats, high volume senders, bounce tracking, alerts
+      bans/              → Fail2ban IP management, custom blocklist with Rspamd sync
       settings/          → platform settings (key-value store)
   Each module = its own mini-service inside one process
 ```
@@ -99,6 +101,7 @@ WHAT Redis handles (3 specific jobs):
   1. Session store     -> JWT refresh tokens, admin sessions
   2. Job queue backend -> BullMQ stores job data here
   3. Rate limiter      -> per-user/domain send rate counters (sliding window)
+  4. IMAP pool sessions -> persistent IMAP connections per webmail session (max 2 per mailbox)
 
 WHAT Redis does NOT handle:
   - NOT a cache layer (premature at this scale — PostgreSQL is fast enough)
@@ -246,12 +249,12 @@ WHY NOT Next.js:
 |-------------|------------------------|-----------------------------|
 | SMTP        | **Postfix 3.8+**       | Send & receive emails       |
 | IMAP        | **Dovecot 2.3+**       | Mailbox access for users    |
-| Spam Filter | **Rspamd 3.x**         | Spam scoring, greylisting, DKIM signing |
+| Spam Filter | **Rspamd 3.x**         | Spam scoring, greylisting, RBL/DNSBL, DKIM signing, per-user rate limiting |
 | Antivirus   | **ClamAV**             | Attachment scanning         |
 | Webmail     | **Roundcube** (Docker) | Browser-based email client  |
 | TLS         | **Let's Encrypt**      | Free SSL certificates       |
 | Proxy       | **Nginx**              | Reverse proxy, TLS termination |
-| Firewall    | **UFW + Fail2ban**     | Port control + brute-force block |
+| Firewall    | **UFW + Fail2ban**     | Port control + brute-force block (ignoreip: 172.22.22.0/24 gateway, 172.17.0.0/16 Docker) |
 
 > Note: Rspamd handles DKIM signing natively — no separate OpenDKIM needed.
 > This simplifies the stack (one less service to configure).
@@ -263,8 +266,8 @@ WHY NOT Next.js:
 | Runtime     | **Node.js 22 LTS**         | Async I/O, large ecosystem        |
 | Framework   | **Fastify 5**              | 2x faster than Express, schema validation built-in |
 | Language    | **TypeScript 5.x**         | Type safety across entire backend |
-| ORM         | **Drizzle ORM**            | SQL-close, lightweight, great migrations |
-| Database    | **PostgreSQL 16**          | Postfix/Dovecot direct SQL, JSONB, proven |
+| ORM         | **Drizzle ORM**            | SQL-close, lightweight, great migrations (pool=50) |
+| Database    | **PostgreSQL 16**          | Postfix/Dovecot direct SQL, JSONB, proven (max_connections=300) |
 | Cache/Queue | **Redis 7**                | Sessions, BullMQ backend, rate limits |
 | Job Queue   | **BullMQ**                 | Background workers on Redis (requires Redis 5+) |
 | Validation  | **Zod**                    | Runtime schema validation         |
@@ -538,6 +541,21 @@ CREATE TABLE password_reset_requests (
     notes           TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================
+-- BLOCKLIST (custom bans: IP, email, domain)
+-- ============================================
+
+CREATE TABLE blocklist (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type        VARCHAR(20) NOT NULL,       -- ip, email, domain
+    value       VARCHAR(255) NOT NULL,
+    reason      TEXT,
+    permanent   BOOLEAN DEFAULT FALSE,
+    expires_at  TIMESTAMPTZ,
+    created_by  UUID REFERENCES admins(id),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ### Key Relationships
@@ -622,7 +640,13 @@ backend/
 │   │   │   └── billing.routes.ts      # Invoices, payments, client controls, client user management, billing overview
 │   │   │
 │   │   ├── server-health/
-│   │   │   └── health.routes.ts       # System info, DB/Redis/mail status, disk usage, metrics
+│   │   │   └── health.routes.ts       # System info, DB/Redis/mail status, disk usage, metrics, Rspamd stats, Fail2ban, SSL expiry, IMAP connections
+│   │   │
+│   │   ├── abuse/
+│   │   │   └── abuse.routes.ts        # Rspamd stats, high volume senders, bounce tracking, alerts
+│   │   │
+│   │   ├── bans/
+│   │   │   └── bans.routes.ts         # Fail2ban IP view/ban/unban, custom blocklist CRUD with Rspamd sync, audit logged
 │   │   │
 │   │   └── settings/
 │   │       ├── settings.routes.ts     # GET/PUT /api/admin/settings
@@ -651,6 +675,17 @@ backend/
 ├── package.json
 ├── tsconfig.json
 └── Dockerfile
+```
+
+### Infrastructure Configs (Saved)
+
+```
+infra/                                     # Sanitized infrastructure configs (committed to repo)
+├── nginx/                                 # Nginx site configs
+├── postfix/                               # Postfix main.cf, master.cf
+├── dovecot/                               # Dovecot configs
+├── rspamd/                                # Rspamd local.d configs
+└── fail2ban/                              # Fail2ban jail configs
 ```
 
 ---
@@ -694,7 +729,9 @@ frontend/
 │   │   │   ├── mail.tsx               # Mail logs
 │   │   │   └── audit.tsx              # Audit trail
 │   │   ├── admin/
-│   │   │   ├── server-health.tsx      # CPU, RAM, disk, services dashboard
+│   │   │   ├── server-health.tsx      # CPU, RAM, disk, services, Rspamd stats, Fail2ban, SSL expiry, IMAP connections
+│   │   │   ├── abuse.tsx              # Abuse Monitor: Rspamd stats, high volume senders, bounce tracking, outbound by client, auto-refresh alerts
+│   │   │   ├── bans.tsx               # Ban Management: Fail2ban IP view/ban/unban, custom blocklist (email/domain/IP) with Rspamd sync, audit logged
 │   │   │   ├── client-controls.tsx    # Service toggle, limit overrides per client
 │   │   │   ├── billing.tsx            # Invoices, payments, billing overview
 │   │   │   └── settings.tsx           # Platform settings (hostname, IP, DMARC email, etc.)
@@ -776,6 +813,14 @@ frontend/
 | PUT    | /api/admin/settings               | Update platform settings                   |
 | GET    | /api/admin/password-resets        | List all password reset requests           |
 | PUT    | /api/admin/password-resets/:id    | Resolve reset request (set new password)   |
+| GET    | /api/admin/bans/fail2ban          | List Fail2ban banned IPs                   |
+| POST   | /api/admin/bans/fail2ban          | Manually ban an IP via Fail2ban            |
+| POST   | /api/admin/bans/fail2ban/unban    | Unban an IP from Fail2ban                  |
+| GET    | /api/admin/bans/blocklist         | List custom blocklist entries               |
+| POST   | /api/admin/bans/blocklist         | Add blocklist entry (IP/email/domain)       |
+| DELETE | /api/admin/bans/blocklist         | Remove blocklist entry                      |
+| GET    | /api/admin/abuse/overview         | Abuse overview (Rspamd stats, high volume, bounces) |
+| GET    | /api/admin/abuse/alerts           | Active abuse alerts (auto-refresh)          |
 | GET    | /api/health                       | Public health check                        |
 
 ### Client Portal Routes (JWT type: client)
@@ -805,6 +850,8 @@ frontend/
 | GET    | /api/client-portal/billing                     | Client's invoices + payments           |
 | GET    | /api/client-portal/mail-settings               | IMAP/SMTP/webmail config from settings |
 | GET    | /api/client-portal/migration/info              | Import/export instructions             |
+| POST   | /api/webmail/ensure-folder                     | Ensure IMAP folder exists               |
+| POST   | /api/webmail/change-password                   | Change mailbox password from webmail    |
 
 ---
 
@@ -832,6 +879,10 @@ The `/api/admin/server/health` endpoint gathers:
 - **Redis**: ping latency, memory usage, total keys
 - **Mail services**: systemctl status for Postfix, Dovecot, Rspamd + mail queue size
 - **Disk**: filesystem usage for / and /var/mail
+- **Rspamd**: spam/ham stats, action breakdown
+- **Fail2ban**: jail status, banned IP count per jail
+- **SSL certificates**: expiry date per domain
+- **IMAP connections**: active Dovecot IMAP connection count
 
 A lightweight `/api/admin/server/metrics` endpoint is available for frequent polling.
 
@@ -873,6 +924,18 @@ The support link in Roundcube points to this setup guide.
 
 Any client's user can log in with their full email (`john@acme.com`) and password.
 Roundcube connects to Dovecot (IMAP, port 993) for reading and Postfix (SMTP, port 587) for sending.
+
+### Custom Webmail
+
+In addition to Roundcube, WenMail includes a custom webmail client built into the platform.
+IMAP connection pooling provides persistent connections per session (max 2 per mailbox),
+backed by Redis sessions, resulting in 13-83x faster webmail performance.
+
+**Webmail Settings** (4 tabs):
+1. **General** — display name, page size
+2. **Compose** — signature editor
+3. **Account** — change password (POST /api/webmail/change-password)
+4. **Mail Setup** — IMAP/SMTP connection info for external clients
 
 ### Email Client Setup Instructions
 
@@ -992,12 +1055,14 @@ password_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user,
                         m.password_hash AS password
                  FROM mailboxes m JOIN domains d ON m.domain_id = d.id
                  WHERE m.local_part='%n' AND d.domain_name='%d' AND m.status='active'
+                   AND d.verified=true AND d.dkim_configured=true AND d.spf_configured=true
 
 user_query = SELECT CONCAT('/var/mail/vhosts/', d.domain_name, '/', m.local_part) AS home,
                     5000 AS uid, 5000 AS gid,
                     CONCAT('*:bytes=', m.quota_mb * 1048576) AS quota_rule
              FROM mailboxes m JOIN domains d ON m.domain_id = d.id
              WHERE m.local_part='%n' AND d.domain_name='%d' AND m.status='active'
+                   AND d.verified=true AND d.dkim_configured=true AND d.spf_configured=true
 
 iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
                 FROM mailboxes m JOIN domains d ON m.domain_id = d.id
@@ -1033,9 +1098,18 @@ iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
 
 ### Infrastructure Protection
 - UFW firewall — only ports 25, 80, 443, 587, 993 open
-- Fail2ban — blocks IPs after failed login attempts
+- Fail2ban — blocks IPs after failed login attempts; ignoreip includes 172.22.22.0/24 (gateway) and 172.17.0.0/16 (Docker)
 - Rate limiting — @fastify/rate-limit (100 req/min default, Redis-backed in production)
-- Rspamd — spam scoring, greylisting, virus scanning (ClamAV)
+- Rspamd — spam scoring, greylisting (with allowlist for Gmail/Outlook/major providers), RBL/DNSBL checks (Spamhaus, Barracuda, SpamCop), virus scanning (ClamAV)
+- Rspamd spam thresholds — reject >15, add to junk >6, greylist >4
+- Rspamd per-user rate limiting — 3 messages/min, 100 messages/hr per sender
+- Postfix sender verification + HELO checks
+- Custom blocklist (IP/email/domain) with Rspamd sync, managed via admin UI
+
+### Domain Verification Enforcement
+- Dovecot SQL auth requires domain.verified=true AND dkim_configured=true AND spf_configured=true
+- Unverified or partially configured domains cannot authenticate for IMAP at all
+- Webmail login returns a specific error message explaining the domain is not yet verified
 
 ### Multi-Tenant Isolation
 - Every portal query scoped by clientId from JWT
