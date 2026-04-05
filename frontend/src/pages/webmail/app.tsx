@@ -185,7 +185,7 @@ export function WebmailApp() {
         <div className="p-3 border-t border-gray-200 dark:border-slate-700">
           <p className="text-xs text-gray-500 dark:text-slate-500 truncate mb-2">{email}</p>
           <div className="flex items-center justify-between">
-            <button onClick={handleLogout} className="text-xs text-gray-500 dark:text-slate-400 hover:text-red-600 flex items-center gap-1"><LogOut size={14} /> Logout</button>
+            <button onClick={handleLogout} className="text-xs text-gray-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all duration-150"><LogOut size={14} /> Logout</button>
             <div className="flex items-center gap-1">
               <button onClick={() => { setShowSettings(true); setSidebarOpen(false); }} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Settings"><Settings size={16} /></button>
               <ThemeToggle />
