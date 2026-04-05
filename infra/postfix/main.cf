@@ -1,0 +1,91 @@
+# See /usr/share/postfix/main.cf.dist for a commented, more complete version
+
+smtpd_banner = $myhostname ESMTP
+biff = no
+append_dot_mydomain = no
+readme_directory = no
+compatibility_level = 3.6
+
+# Hostname
+myhostname = mail.wenvia.global
+mydomain = wenvia.global
+myorigin = $mydomain
+
+# Network
+inet_interfaces = all
+inet_protocols = all
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+mydestination = localhost
+
+# TLS — incoming (Let's Encrypt)
+smtpd_tls_cert_file = /etc/letsencrypt/live/mail.wenvia.global/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/mail.wenvia.global/privkey.pem
+smtpd_tls_security_level = may
+smtpd_tls_auth_only = yes
+smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+smtpd_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+
+# TLS — outgoing
+smtp_tls_CApath = /etc/ssl/certs
+smtp_tls_security_level = encrypt
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+
+# SMTP Relay via Brevo (outbound) — disabled, sending directly
+# To re-enable: uncomment below and run `systemctl restart postfix`
+# relayhost = [smtp-relay.brevo.com]:587
+# smtp_sasl_auth_enable = yes
+# smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+# smtp_sasl_security_options = noanonymous
+
+# SASL auth via Dovecot
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_security_options = noanonymous
+smtpd_sasl_local_domain = $myhostname
+
+# Restrictions — anti-spam
+smtpd_relay_restrictions = permit_mynetworks permit_sasl_authenticated defer_unauth_destination
+smtpd_recipient_restrictions =
+  permit_mynetworks,
+  permit_sasl_authenticated,
+  reject_unauth_destination,
+  reject_unknown_sender_domain,
+  reject_unknown_recipient_domain,
+  reject_non_fqdn_sender,
+  reject_non_fqdn_recipient
+
+smtpd_helo_required = yes
+smtpd_helo_restrictions = permit_mynetworks, reject_invalid_helo_hostname
+
+# Outbound rate limiting (per-user, prevents spam abuse)
+smtpd_client_message_rate_limit = 100
+smtpd_client_recipient_rate_limit = 200
+anvil_rate_time_unit = 3600s
+
+# Virtual mailbox setup (PostgreSQL)
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+virtual_mailbox_domains = pgsql:/etc/postfix/sql/virtual_domains.cf
+virtual_mailbox_maps = pgsql:/etc/postfix/sql/virtual_mailbox.cf
+virtual_alias_maps = pgsql:/etc/postfix/sql/virtual_alias.cf
+virtual_mailbox_base = /var/mail/vhosts
+
+# Mailbox ownership
+virtual_uid_maps = static:5000
+virtual_gid_maps = static:5000
+
+# Size limits
+message_size_limit = 52428800
+mailbox_size_limit = 0
+
+# Rspamd milter
+milter_protocol = 6
+milter_default_action = accept
+smtpd_milters = inet:localhost:11332
+non_smtpd_milters = inet:localhost:11332
+
+# Aliases
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+
+recipient_delimiter = +

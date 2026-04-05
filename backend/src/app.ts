@@ -101,6 +101,8 @@ export async function buildApp() {
   await app.register(billingRoutes, { prefix: "/api/admin" });
   await app.register(serverHealthRoutes, { prefix: "/api/admin/server" });
   await app.register(settingsRoutes, { prefix: "/api/admin/settings" });
+  const { abuseRoutes } = await import("./modules/admin/abuse.routes.js");
+  await app.register(abuseRoutes, { prefix: "/api/admin/abuse" });
 
   // ==========================================
   // Client Portal routes (JWT with client type)

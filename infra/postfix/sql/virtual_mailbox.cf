@@ -1,0 +1,5 @@
+user = mailplatform
+password = <DB_PASSWORD>
+hosts = 127.0.0.1
+dbname = emailplatform
+query = SELECT CONCAT(d.domain_name, '/', m.local_part, '/') FROM mailboxes m JOIN domains d ON m.domain_id = d.id WHERE m.local_part='%u' AND d.domain_name='%d' AND m.status='active'

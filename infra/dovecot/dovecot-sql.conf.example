@@ -1,0 +1,36 @@
+driver = pgsql
+connect = host=127.0.0.1 dbname=emailplatform user=mailplatform password=<DB_PASSWORD>
+
+default_pass_scheme = SHA512-CRYPT
+
+# Password lookup — authenticate user
+password_query = \
+  SELECT \
+    CONCAT(m.local_part, '@', d.domain_name) AS user, \
+    m.password_hash AS password \
+  FROM mailboxes m \
+  JOIN domains d ON m.domain_id = d.id \
+  WHERE m.local_part = '%n' \
+    AND d.domain_name = '%d' \
+    AND m.status = 'active'
+
+# User lookup — find mailbox location
+user_query = \
+  SELECT \
+    CONCAT('/var/mail/vhosts/', d.domain_name, '/', m.local_part) AS home, \
+    5000 AS uid, \
+    5000 AS gid, \
+    CONCAT('*:bytes=', m.quota_mb * 1048576) AS quota_rule \
+  FROM mailboxes m \
+  JOIN domains d ON m.domain_id = d.id \
+  WHERE m.local_part = '%n' \
+    AND d.domain_name = '%d' \
+    AND m.status = 'active'
+
+# Iterate query — for quota sync
+iterate_query = \
+  SELECT \
+    CONCAT(m.local_part, '@', d.domain_name) AS user \
+  FROM mailboxes m \
+  JOIN domains d ON m.domain_id = d.id \
+  WHERE m.status = 'active'

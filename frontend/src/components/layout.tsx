@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet, NavLink } from "react-router";
 import {
   LayoutDashboard, Users, Globe, Mail, ArrowRightLeft, ScrollText, Shield,
-  CreditCard, Activity, Settings, KeyRound, LogOut, Menu, X,
+  CreditCard, Activity, Settings, KeyRound, LogOut, Menu, X, ShieldAlert,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { logout } from "../api/auth";
@@ -17,6 +17,7 @@ const navItems = [
   { to: "/admin/logs/mail", icon: ScrollText, label: "Mail Logs", section: "logs" },
   { to: "/admin/logs/audit", icon: Shield, label: "Audit Logs", section: "logs" },
   { to: "/admin/billing", icon: CreditCard, label: "Billing", section: "admin" },
+  { to: "/admin/abuse", icon: ShieldAlert, label: "Abuse Monitor", section: "admin" },
   { to: "/admin/password-resets", icon: KeyRound, label: "Password Resets", section: "admin" },
   { to: "/admin/server", icon: Activity, label: "Server Health", section: "admin" },
   { to: "/admin/settings", icon: Settings, label: "Settings", section: "admin" },

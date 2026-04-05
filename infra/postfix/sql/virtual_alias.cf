@@ -1,0 +1,5 @@
+user = mailplatform
+password = <DB_PASSWORD>
+hosts = 127.0.0.1
+dbname = emailplatform
+query = SELECT destination FROM aliases a JOIN domains d ON a.domain_id = d.id WHERE a.source_local='%u' AND d.domain_name='%d' AND a.status='active'

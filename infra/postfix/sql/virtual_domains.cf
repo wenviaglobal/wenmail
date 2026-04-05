@@ -1,0 +1,5 @@
+user = mailplatform
+password = <DB_PASSWORD>
+hosts = 127.0.0.1
+dbname = emailplatform
+query = SELECT domain_name FROM domains WHERE domain_name='%s' AND status='active' AND verified=true
