@@ -95,7 +95,7 @@ export function PortalMailboxesPage() {
           <button className="text-gray-400 hover:text-gray-600 p-1">
             <MoreVertical size={16} />
           </button>
-          <div className="hidden group-hover:block absolute right-0 top-6 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1 min-w-[160px]">
+          <div className="hidden group-hover:block absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg z-10 py-1 min-w-[160px]">
             {m.status === "active" ? (
               <>
                 <button onClick={() => {
@@ -106,11 +106,11 @@ export function PortalMailboxesPage() {
                       .catch(() => alert("Failed to change password"));
                   } else if (pw) { alert("Password must be at least 8 characters"); }
                 }}
-                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
                   Change Password
                 </button>
                 <button onClick={() => { if (confirm(`Disable ${m.localPart}@${m.domainName}?`)) deleteMutation.mutate(m.id); }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t border-slate-100">
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 border-t border-slate-100">
                   Disable Mailbox
                 </button>
               </>
@@ -120,14 +120,14 @@ export function PortalMailboxesPage() {
                   portalApi.put(`mailboxes/${m.id}`, { json: { status: "active" } }).json()
                     .then(() => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] }));
                 }}
-                  className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50">
+                  className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30">
                   Re-enable
                 </button>
                 <button onClick={() => {
                   if (confirm(`PERMANENTLY DELETE ${m.localPart}@${m.domainName}?\n\nThis will remove all emails and cannot be undone.`))
                     permanentDeleteMutation.mutate(m.id);
                 }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t border-slate-100">
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 border-t border-slate-100">
                   Delete Forever
                 </button>
               </>
