@@ -49,15 +49,14 @@ function hasAttachments(structure: any): boolean {
 
 // Helper to get auth'd IMAP client for a request
 async function authed(request: any, reply: any) {
-  const session = getSession(request);
+  const session = await getSession(request);
   if (!session) { reply.status(401).send({ message: "Unauthorized" }); return null; }
   const token = getSessionToken(request)!;
   try {
     const client = await getImapClient(token, session.email, session.password);
     return { client, session, token };
   } catch {
-    // Connection failed — destroy and ask to re-login
-    destroySession(token);
+    await destroySession(token);
     reply.status(401).send({ message: "Session expired, please login again" });
     return null;
   }
@@ -73,13 +72,13 @@ export async function webmailRoutes(app: FastifyInstance) {
     const { email, password } = loginSchema.parse(request.body);
     const valid = await validateCredentials(email, password);
     if (!valid) return reply.status(401).send({ message: "Invalid email or password" });
-    const token = createSession(email, password);
+    const token = await createSession(email, password);
     return { token, email };
   });
 
   app.post("/logout", async (request) => {
     const token = getSessionToken(request as any);
-    if (token) destroySession(token);
+    if (token) await destroySession(token);
     return { message: "Logged out" };
   });
 
@@ -434,7 +433,7 @@ export async function webmailRoutes(app: FastifyInstance) {
   // ==========================================
 
   app.post("/change-password", async (request, reply) => {
-    const session = getSession(request as any);
+    const session = await getSession(request as any);
     if (!session) return reply.status(401).send({ message: "Unauthorized" });
 
     const { currentPassword, newPassword } = z.object({
@@ -466,8 +465,8 @@ export async function webmailRoutes(app: FastifyInstance) {
 
     // Update session with new password
     const token = getSessionToken(request as any)!;
-    destroySession(token);
-    const newToken = createSession(email, newPassword);
+    await destroySession(token);
+    const newToken = await createSession(email, newPassword);
 
     return { message: "Password changed successfully", token: newToken };
   });
