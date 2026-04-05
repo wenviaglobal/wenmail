@@ -24,6 +24,7 @@ import { AdminBillingPage } from "./pages/admin/billing";
 import { AdminSettingsPage } from "./pages/admin/settings";
 import { PasswordResetsPage } from "./pages/admin/password-resets";
 import { AbusePage } from "./pages/admin/abuse";
+import { BansPage } from "./pages/admin/bans";
 
 // Client Portal pages
 import { PortalLoginPage } from "./pages/portal/login";
@@ -93,6 +94,7 @@ export function App() {
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="password-resets" element={<PasswordResetsPage />} />
           <Route path="abuse" element={<AbusePage />} />
+          <Route path="bans" element={<BansPage />} />
         </Route>
 
         {/* ============================== */}

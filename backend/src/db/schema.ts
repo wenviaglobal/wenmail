@@ -300,6 +300,21 @@ export const auditLog = pgTable("audit_log", {
 // PASSWORD RESET REQUESTS (DB-based, no email)
 // ============================================
 
+// ============================================
+// BLOCKLIST (admin-managed email/IP bans)
+// ============================================
+
+export const blocklist = pgTable("blocklist", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: varchar("type", { length: 20 }).notNull(), // ip, email, domain
+  value: varchar("value", { length: 255 }).notNull(),
+  reason: text("reason"),
+  permanent: boolean("permanent").default(false),
+  createdBy: uuid("created_by"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 export const passwordResetRequests = pgTable("password_reset_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
   clientUserId: uuid("client_user_id").notNull().references(() => clientUsers.id, { onDelete: "cascade" }),

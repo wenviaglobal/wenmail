@@ -29,6 +29,13 @@
       "when": 1775301323208,
       "tag": "0003_rapid_violations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775365615800,
+      "tag": "0004_spooky_magneto",
+      "breakpoints": true
     }
   ]
 }
