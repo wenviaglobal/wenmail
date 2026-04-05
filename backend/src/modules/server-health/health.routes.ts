@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readdir } from "node:fs/promises";
 import os from "node:os";
 import { sql } from "drizzle-orm";
 import { authGuard } from "../auth/auth.guard.js";
@@ -14,15 +15,16 @@ export async function serverHealthRoutes(app: FastifyInstance) {
 
   // GET /api/admin/server/health — full system overview
   app.get("/health", async () => {
-    const [system, database, redisInfo, mail, disk] = await Promise.all([
+    const [system, database, redisInfo, mail, disk, security] = await Promise.all([
       getSystemInfo(),
       getDatabaseInfo(),
       getRedisInfo(),
       getMailServiceStatus(),
       getDiskUsage(),
+      getSecurityInfo(),
     ]);
 
-    return { system, database, redis: redisInfo, mail, disk, timestamp: new Date().toISOString() };
+    return { system, database, redis: redisInfo, mail, disk, security, timestamp: new Date().toISOString() };
   });
 
   // GET /api/admin/server/metrics — lightweight for polling
@@ -155,4 +157,72 @@ async function getDiskUsage() {
   } catch {
     return [{ filesystem: "unknown", size: "N/A", used: "N/A", available: "N/A", usePercent: "N/A", mountedOn: "/" }];
   }
+}
+
+const execFileAsync = promisify(execFile);
+
+async function getSecurityInfo() {
+  const result: any = { rspamd: {}, fail2ban: {}, ssl: [], imapConnections: 0 };
+
+  // Rspamd stats
+  try {
+    const { stdout } = await execFileAsync("rspamc", ["stat"]);
+    const lines = stdout.split("\n");
+    for (const line of lines) {
+      const m = line.match(/^(.+?):\s+(.+)$/);
+      if (m) {
+        const key = m[1].trim();
+        if (key === "Messages scanned") result.rspamd.scanned = m[2].trim();
+        if (key.includes("action reject")) result.rspamd.rejected = m[2].trim();
+        if (key.includes("action greylist")) result.rspamd.greylisted = m[2].trim();
+        if (key.includes("action add header")) result.rspamd.spamTagged = m[2].trim();
+        if (key.includes("action rewrite")) result.rspamd.rewritten = m[2].trim();
+      }
+    }
+  } catch {}
+
+  // Fail2ban
+  try {
+    const { stdout } = await execAsync("fail2ban-client status 2>/dev/null");
+    const jailMatch = stdout.match(/Jail list:\s+(.+)/);
+    const jails = jailMatch ? jailMatch[1].split(",").map(j => j.trim()) : [];
+    result.fail2ban.jails = jails;
+    result.fail2ban.totalBanned = 0;
+    for (const jail of jails) {
+      try {
+        const { stdout: js } = await execAsync(`fail2ban-client status ${jail} 2>/dev/null`);
+        const bannedMatch = js.match(/Currently banned:\s+(\d+)/);
+        const banned = bannedMatch ? parseInt(bannedMatch[1]) : 0;
+        result.fail2ban.totalBanned += banned;
+      } catch {}
+    }
+  } catch { result.fail2ban = { jails: [], totalBanned: 0 }; }
+
+  // SSL certificate expiry
+  try {
+    const { stdout } = await execAsync("certbot certificates 2>/dev/null");
+    const certs = stdout.split("Certificate Name:").slice(1);
+    for (const cert of certs) {
+      const nameMatch = cert.match(/^\s*(.+)/);
+      const expiryMatch = cert.match(/Expiry Date:\s*(\S+ \S+)/);
+      if (nameMatch && expiryMatch) {
+        const expiry = new Date(expiryMatch[1]);
+        const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+        result.ssl.push({
+          domain: nameMatch[1].trim(),
+          expiry: expiryMatch[1],
+          daysLeft,
+          status: daysLeft > 30 ? "ok" : daysLeft > 7 ? "warning" : "critical",
+        });
+      }
+    }
+  } catch {}
+
+  // Active IMAP connections
+  try {
+    const { stdout } = await execAsync("doveadm who 2>/dev/null | wc -l");
+    result.imapConnections = Math.max(0, parseInt(stdout.trim()) - 1); // subtract header
+  } catch {}
+
+  return result;
 }

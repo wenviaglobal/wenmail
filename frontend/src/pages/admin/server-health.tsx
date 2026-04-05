@@ -140,6 +140,57 @@ export function ServerHealthPage() {
           </table>
         </div>
       </div>
+
+      {/* Security & Spam */}
+      {(data as any).security && (
+        <>
+          <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Activity size={20} /> Spam Filter (Rspamd)</h2>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+              {Object.entries((data as any).security.rspamd || {}).map(([key, val]) => (
+                <div key={key}>
+                  <span className="text-gray-500 capitalize">{key}</span>
+                  <p className="font-semibold text-lg">{val as string}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Fail2ban */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="font-semibold mb-2">Fail2ban</h3>
+              <p className="text-sm text-gray-500">Jails: {((data as any).security.fail2ban?.jails || []).join(", ") || "none"}</p>
+              <p className="text-2xl font-bold mt-1">
+                <span className={(data as any).security.fail2ban?.totalBanned > 0 ? "text-amber-600" : "text-green-600"}>
+                  {(data as any).security.fail2ban?.totalBanned ?? 0}
+                </span>
+                <span className="text-sm text-gray-400 ml-1">banned IPs</span>
+              </p>
+            </div>
+
+            {/* IMAP Connections */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="font-semibold mb-2">IMAP Connections</h3>
+              <p className="text-2xl font-bold">{(data as any).security.imapConnections ?? 0}</p>
+              <p className="text-sm text-gray-400">active sessions</p>
+            </div>
+
+            {/* SSL Certs */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="font-semibold mb-2">SSL Certificates</h3>
+              {((data as any).security.ssl || []).map((cert: any, i: number) => (
+                <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-50 last:border-0">
+                  <span className="text-gray-600 truncate max-w-[140px]">{cert.domain}</span>
+                  <span className={cn("font-medium",
+                    cert.status === "ok" ? "text-green-600" : cert.status === "warning" ? "text-amber-600" : "text-red-600"
+                  )}>{cert.daysLeft}d left</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
