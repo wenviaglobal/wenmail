@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
+import helmet from "@fastify/helmet";
 import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
 import { redis } from "./lib/redis.js";
@@ -37,6 +38,11 @@ export async function buildApp() {
   });
 
   // Plugins
+  await app.register(helmet, {
+    contentSecurityPolicy: false, // CSP can break frontend proxying
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+  });
+
   await app.register(cors, {
     origin: env.NODE_ENV === "development" ? true : [`https://${env.PLATFORM_DOMAIN}`],
     credentials: true,

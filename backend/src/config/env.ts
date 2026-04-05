@@ -13,6 +13,7 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES: z.string().default("7d"),
 
   PLATFORM_DOMAIN: z.string().default("mail.yourplatform.com"),
+  ENCRYPTION_KEY: z.string().min(32).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

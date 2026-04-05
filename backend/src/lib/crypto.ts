@@ -4,11 +4,12 @@ import { env } from "../config/env.js";
 const ALGORITHM = "aes-256-gcm";
 
 /**
- * Derive a 32-byte encryption key from JWT_SECRET.
- * In production, use a dedicated ENCRYPTION_KEY env var or KMS.
+ * Get 32-byte encryption key.
+ * Uses dedicated ENCRYPTION_KEY if set, otherwise derives from JWT_SECRET.
  */
 function getKey(): Buffer {
-  return createHash("sha256").update(env.JWT_SECRET).digest();
+  const source = env.ENCRYPTION_KEY || env.JWT_SECRET;
+  return createHash("sha256").update(source).digest();
 }
 
 /**
