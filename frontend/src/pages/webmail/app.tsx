@@ -170,7 +170,7 @@ export function WebmailApp() {
             const Icon = folderIcons[f.specialUse || ""] || Folder;
             return (
               <button key={f.path} onClick={() => selectFolder(f.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${f.path === currentFolder && !starredFilter ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"}`}>
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 ${f.path === currentFolder && !starredFilter ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-medium border-l-[3px] border-l-indigo-500 pl-[9px]" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/70 hover:pl-4"}`}>
                 <Icon size={16} /><span className="flex-1 text-left">{f.name}</span>
                 {f.unseen > 0 && <span className="bg-indigo-600 text-white text-xs px-1.5 py-0.5 rounded-full font-medium">{f.unseen}</span>}
               </button>
@@ -178,7 +178,7 @@ export function WebmailApp() {
           })}
           {/* Starred filter */}
           <button onClick={() => { setStarredFilter(!starredFilter); setSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${starredFilter ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 font-medium" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"}`}>
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 ${starredFilter ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 font-medium border-l-[3px] border-l-yellow-500 pl-[9px]" : "text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/70 hover:pl-4"}`}>
             <Star size={16} /><span className="flex-1 text-left">Starred</span>
           </button>
         </nav>
@@ -244,7 +244,7 @@ export function WebmailApp() {
             )}
             {displayMessages.map(msg => (
               <div key={msg.uid}
-                className={`flex items-start gap-2 px-3 py-2.5 border-b border-gray-100 dark:border-slate-700/50 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition ${selectedMsg?.uid === msg.uid ? "bg-indigo-50 dark:bg-indigo-900/20" : ""} ${!msg.seen ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+                className={`flex items-start gap-2 px-3 py-2.5 border-b border-gray-100 dark:border-slate-700/50 hover:bg-indigo-50/50 dark:hover:bg-slate-700/70 cursor-pointer transition-all duration-150 ${selectedMsg?.uid === msg.uid ? "bg-indigo-50 dark:bg-indigo-900/25 border-l-[3px] border-l-indigo-500 pl-[9px]" : "border-l-[3px] border-l-transparent"} ${!msg.seen ? "bg-blue-50/30 dark:bg-blue-900/10" : ""}`}>
                 <button onClick={e => { e.stopPropagation(); toggleSelect(msg.uid); }} className="mt-1 text-gray-300 hover:text-gray-500 shrink-0">
                   {selected.has(msg.uid) ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />}
                 </button>

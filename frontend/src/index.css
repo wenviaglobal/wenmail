@@ -208,16 +208,40 @@ body {
   background-color: rgb(15 23 42) !important;
 }
 
+/* ==========================================
+   Global Hover & Interaction Effects
+   ========================================== */
+
+/* Clickable rows / list items — subtle hover */
+tr:hover td,
+[role="listitem"]:hover,
+button:not(:disabled):hover {
+  transition: all 0.15s ease;
+}
+
+/* Smooth transitions everywhere */
+a, button, input, select, textarea, div[class*="hover:"] {
+  transition: all 0.15s ease;
+}
+
+/* Active/selected nav items — left border accent */
+nav a[aria-current="page"],
+nav a.active,
+nav button.active {
+  border-left: 3px solid rgb(99 102 241) !important;
+  padding-left: calc(0.75rem - 3px) !important;
+}
+
 /* Scrollbar */
 .dark ::-webkit-scrollbar-track {
-  background: rgb(15 23 42); /* slate-900 */
+  background: rgb(15 23 42);
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: rgb(51 65 85); /* slate-700 */
+  background: rgb(51 65 85);
   border-radius: 4px;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: rgb(71 85 105); /* slate-600 */
+  background: rgb(71 85 105);
 }
 ::-webkit-scrollbar {
   width: 6px;
