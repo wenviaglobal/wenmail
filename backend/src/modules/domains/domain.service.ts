@@ -73,7 +73,7 @@ export async function createDomain(clientId: string, domainName: string) {
   try {
     await mkdir("/var/mail/dkim", { recursive: true });
     const keyPath = `/var/mail/dkim/${domainName.toLowerCase()}.${domain.dkimSelector || "mail"}.key`;
-    await writeFile(keyPath, decrypt(domain.dkimPrivateKey!), { mode: 0o640 });
+    await writeFile(keyPath, decrypt(domain.dkimPrivateKey!), { mode: 0o600 });
   } catch {
     // Non-fatal in dev — Rspamd may not be running
   }

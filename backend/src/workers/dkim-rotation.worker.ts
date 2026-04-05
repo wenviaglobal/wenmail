@@ -45,7 +45,7 @@ export function createDkimRotationWorker() {
           // Save to disk for Rspamd
           await mkdir("/var/mail/dkim", { recursive: true });
           const keyPath = `/var/mail/dkim/${domain.domainName}.${domain.dkimSelector || "mail"}.key`;
-          await writeFile(keyPath, privateKey, { mode: 0o640 });
+          await writeFile(keyPath, privateKey, { mode: 0o600 });
 
           logAudit({ actorType: "system", action: "dkim.rotated", targetType: "domain", targetId: domain.id, details: { domainName: domain.domainName } });
           rotated++;
