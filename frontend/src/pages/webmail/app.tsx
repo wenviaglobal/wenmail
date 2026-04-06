@@ -398,7 +398,8 @@ interface ComposeProps {
 function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const { mode, original } = compose;
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [attachments, setAttachments] = useState<{ filename: string; content: string; contentType: string }[]>([]);
+  const [attachments, setAttachments] = useState<{ filename: string; content: string; contentType: string; size: number }[]>([]);
+  const totalAttachmentSize = attachments.reduce((sum, a) => sum + a.size, 0);
 
   const isDraft = !!compose.draftUid;
 
@@ -455,12 +456,12 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   function handleFiles(files: FileList | null) {
     if (!files) return;
     Array.from(files).forEach(file => {
-      // Max 25 MB per file
       if (file.size > 25 * 1024 * 1024) { setError(`${file.name} exceeds 25 MB limit`); return; }
+      if (totalAttachmentSize + file.size > 50 * 1024 * 1024) { setError("Total attachments exceed 50 MB limit"); return; }
       const reader = new FileReader();
       reader.onload = () => {
         const base64 = (reader.result as string).split(",")[1];
-        setAttachments(prev => [...prev, { filename: file.name, content: base64, contentType: file.type || "application/octet-stream" }]);
+        setAttachments(prev => [...prev, { filename: file.name, content: base64, contentType: file.type || "application/octet-stream", size: file.size }]);
       };
       reader.readAsDataURL(file);
     });
@@ -512,13 +513,16 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
 
           {/* Attachments */}
           {attachments.length > 0 && (
-            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2 flex-wrap">
-              {attachments.map((att, i) => (
-                <span key={i} className="inline-flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded px-2 py-1 text-xs">
-                  <Paperclip size={10} /> {att.filename}
-                  <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 ml-1"><X size={10} /></button>
-                </span>
-              ))}
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700">
+              <div className="flex items-center gap-2 flex-wrap">
+                {attachments.map((att, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded-lg px-2 py-1 text-xs">
+                    <Paperclip size={10} /> {att.filename} <span className="text-gray-400">({formatSize(att.size)})</span>
+                    <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 ml-1"><X size={10} /></button>
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">{attachments.length} file(s), {formatSize(totalAttachmentSize)} total (max 25 MB per file, 50 MB total)</p>
             </div>
           )}
 
@@ -533,8 +537,8 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
                 <Send size={16} /> {sending ? "Sending..." : "Send"}
               </button>
               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Attach file">
-                <Paperclip size={18} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded flex items-center gap-1 text-xs" title="Attach file (max 25 MB per file)">
+                <Paperclip size={16} /> {attachments.length === 0 ? "Attach" : ""}
               </button>
               <button type="button" onClick={handleSaveDraft} disabled={savingDraft}
                 className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded flex items-center gap-1 text-sm" title="Save as Draft">
