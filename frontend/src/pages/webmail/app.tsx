@@ -101,7 +101,10 @@ export function WebmailApp() {
         return;
       }
       setSelectedMsg(d);
-      setMessages(prev => prev.map(m => m.uid === uid ? { ...m, seen: true } : m));
+      // Mark as read in local state immediately
+      setMessages(prev => [...prev.map(m => m.uid === uid ? { ...m, seen: true } : m)]);
+      // Refresh folder unread counts
+      loadFolders();
     } catch {}
     setLoading(false);
   }
