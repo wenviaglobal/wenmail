@@ -4,7 +4,7 @@ import {
   Mail, Inbox, Send, Trash2, Archive, Star, AlertTriangle, RefreshCw,
   Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
   Forward, Paperclip, Download, CheckSquare, Square, StarOff,
-  MailOpen, MailCheck, Settings, Save,
+  MailOpen, MailCheck, Settings, Save, Eye, EyeOff, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 
@@ -439,6 +439,9 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   };
 
   const [to, setTo] = useState(prefillTo);
+  const [cc, setCc] = useState(isDraft && original?.cc ? original.cc.map(c => c.address).join(", ") : "");
+  const [bcc, setBcc] = useState("");
+  const [showCcBcc, setShowCcBcc] = useState(!!cc);
   const [subject, setSubject] = useState(prefillSubject);
   const [text, setText] = useState(prefillBody);
   const [sending, setSending] = useState(false);
@@ -494,6 +497,8 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
     try {
       await api("/send", { method: "POST", body: JSON.stringify({
         to, subject, text,
+        cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
         inReplyTo: original?.messageId || undefined,
         references: original?.references ? `${original.references} ${original.messageId}` : original?.messageId || undefined,
@@ -522,24 +527,49 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
         <form onSubmit={handleSend} className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2 text-sm">
-            <span className="text-gray-400 dark:text-slate-500 w-12">From:</span>
-            <span className="text-gray-700 dark:text-slate-300">{email}</span>
-          </div>
-          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
-            <span className="text-gray-400 dark:text-slate-500 text-sm w-12">To:</span>
-            <input type="text" value={to} onChange={e => setTo(e.target.value)} required placeholder="recipient@example.com"
-              className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
-          </div>
-          <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
-            <span className="text-gray-400 dark:text-slate-500 text-sm w-12">Subj:</span>
-            <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject"
-              className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
+          {/* Header fields — shrink-0 so they don't scroll */}
+          <div className="shrink-0">
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2 text-sm">
+              <span className="text-gray-400 dark:text-slate-500 w-12">From:</span>
+              <span className="text-gray-700 dark:text-slate-300">{email}</span>
+            </div>
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+              <span className="text-gray-400 dark:text-slate-500 text-sm w-12">To:</span>
+              <input type="text" value={to} onChange={e => setTo(e.target.value)} required placeholder="recipient@example.com"
+                className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
+              {!showCcBcc && (
+                <button type="button" onClick={() => setShowCcBcc(true)} className="text-xs text-indigo-500 hover:text-indigo-700 shrink-0">
+                  CC/BCC
+                </button>
+              )}
+            </div>
+            {showCcBcc && (
+              <>
+                <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+                  <span className="text-gray-400 dark:text-slate-500 text-sm w-12">CC:</span>
+                  <input type="text" value={cc} onChange={e => setCc(e.target.value)} placeholder="cc@example.com"
+                    className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
+                </div>
+                <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+                  <span className="text-gray-400 dark:text-slate-500 text-sm w-12">BCC:</span>
+                  <input type="text" value={bcc} onChange={e => setBcc(e.target.value)} placeholder="bcc@example.com"
+                    className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
+                  <button type="button" onClick={() => setShowCcBcc(false)} className="text-xs text-gray-400 hover:text-gray-600 shrink-0">
+                    <ChevronUp size={14} />
+                  </button>
+                </div>
+              </>
+            )}
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+              <span className="text-gray-400 dark:text-slate-500 text-sm w-12">Subj:</span>
+              <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject"
+                className="flex-1 text-sm outline-none bg-transparent dark:text-white" />
+            </div>
           </div>
 
-          {/* Attachments */}
+          {/* Attachments — shrink-0 */}
           {attachments.length > 0 && (
-            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700">
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700 shrink-0">
               <div className="flex items-center gap-2 flex-wrap">
                 {attachments.map((att, i) => (
                   <span key={i} className="inline-flex items-center gap-1 bg-gray-100 dark:bg-slate-700 rounded-lg px-2 py-1 text-xs">
@@ -548,28 +578,34 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
                   </span>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">{attachments.length} file(s), {formatSize(totalAttachmentSize)} total (max 25 MB per file, 50 MB total)</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">{attachments.length} file(s), {formatSize(totalAttachmentSize)} total (max 25 MB per file)</p>
             </div>
           )}
 
-          <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Write your message..."
-            className="flex-1 p-4 text-sm outline-none resize-none bg-transparent dark:text-white min-h-[200px]" />
+          {/* Body — scrollable, takes remaining space */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Write your message..."
+              className="w-full h-full p-4 text-sm outline-none resize-none bg-transparent dark:text-white min-h-[200px]" />
+          </div>
 
+          {/* Status messages — shrink-0 */}
           {uploading && (
-            <div className="px-4 py-2 flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20">
+            <div className="px-4 py-2 flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 shrink-0">
               <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
               {uploadProgress}
             </div>
           )}
-          {error && <div className="px-4 py-2 text-red-500 text-sm">{error}</div>}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-slate-700">
+          {error && <div className="px-4 py-2 text-red-500 text-sm shrink-0">{error}</div>}
+
+          {/* Footer — always visible at bottom */}
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-slate-700 shrink-0">
             <div className="flex items-center gap-2">
               <button type="submit" disabled={!to || sending || uploading}
                 className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
                 <Send size={16} /> {sending ? "Sending..." : "Send"}
               </button>
               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded flex items-center gap-1 text-xs" title="Attach file (max 25 MB per file)">
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded flex items-center gap-1 text-xs" title="Attach file (max 25 MB)">
                 <Paperclip size={16} /> {attachments.length === 0 ? "Attach" : ""}
               </button>
               <button type="button" onClick={handleSaveDraft} disabled={savingDraft}
@@ -598,6 +634,8 @@ function SettingsModal({ email, onClose }: { email: string; onClose: () => void 
   const [saved, setSaved] = useState(false);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
   const [pwMsg, setPwMsg] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
 
@@ -683,10 +721,22 @@ function SettingsModal({ email, onClose }: { email: string; onClose: () => void 
               </div>
               <form onSubmit={changePassword} className="space-y-3">
                 <h4 className="text-sm font-semibold text-gray-700 dark:text-slate-300">Change Password</h4>
-                <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} placeholder="Current password"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required />
-                <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="New password (min 8 chars)"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required />
+                <div className="relative">
+                  <input type={showCurrentPw ? "text" : "password"} value={currentPw} onChange={e => setCurrentPw(e.target.value)} placeholder="Current password"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required />
+                  <button type="button" onClick={() => setShowCurrentPw(!showCurrentPw)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-white">
+                    {showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <div className="relative">
+                  <input type={showNewPw ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="New password (min 8 chars)"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm" required />
+                  <button type="button" onClick={() => setShowNewPw(!showNewPw)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-white">
+                    {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
                 {pwMsg && <p className={`text-sm ${pwMsg.includes("success") ? "text-green-600" : "text-red-500"}`}>{pwMsg}</p>}
                 <button type="submit" disabled={newPw.length < 8 || pwLoading}
                   className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
