@@ -11,7 +11,7 @@ const loginSchema = z.object({
 
 export async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/login
-  app.post("/login", async (request, reply) => {
+  app.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = loginSchema.parse(request.body);
     const admin = await authenticateAdmin(body.email, body.password);
 

@@ -19,7 +19,7 @@ const changePasswordSchema = z.object({
 
 export async function clientAuthRoutes(app: FastifyInstance) {
   // POST /api/client-portal/auth/login
-  app.post("/login", async (request) => {
+  app.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request) => {
     const { email, password } = loginSchema.parse(request.body);
 
     const [user] = await db
@@ -93,7 +93,7 @@ export async function clientAuthRoutes(app: FastifyInstance) {
   });
 
   // POST /api/client-portal/auth/forgot-password (public — no auth needed)
-  app.post("/forgot-password", async (request) => {
+  app.post("/forgot-password", { config: { rateLimit: { max: 5, timeWindow: "5 minutes" } } }, async (request) => {
     const { email } = z.object({ email: z.string().email() }).parse(request.body);
 
     const [user] = await db

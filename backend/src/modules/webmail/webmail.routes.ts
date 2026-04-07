@@ -68,7 +68,7 @@ export async function webmailRoutes(app: FastifyInstance) {
   // AUTH
   // ==========================================
 
-  app.post("/login", async (request, reply) => {
+  app.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const { email, password } = loginSchema.parse(request.body);
 
     // Check domain verification status before IMAP auth
