@@ -73,21 +73,7 @@ services:
     depends_on:
       - backend
 
-  # ============================================
-  # Roundcube — Webmail client
-  # ============================================
-  roundcube:
-    image: roundcube/roundcubemail:latest
-    restart: unless-stopped
-    ports:
-      - "9000:80"
-    environment:
-      ROUNDCUBEMAIL_DEFAULT_HOST: ${PLATFORM_DOMAIN:-mail.yourplatform.com}
-      ROUNDCUBEMAIL_DEFAULT_PORT: 993
-      ROUNDCUBEMAIL_SMTP_SERVER: ${PLATFORM_DOMAIN:-mail.yourplatform.com}
-      ROUNDCUBEMAIL_SMTP_PORT: 587
-    depends_on:
-      - backend
+  # Roundcube removed — replaced by custom WenMail webmail (React + IMAP)
 
 volumes:
   pgdata:
