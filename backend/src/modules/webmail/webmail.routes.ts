@@ -70,22 +70,38 @@ export async function webmailRoutes(app: FastifyInstance) {
 
   app.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const { email, password } = loginSchema.parse(request.body);
+    const [localPart, emailDomain] = email.split("@");
 
-    // Check domain verification status before IMAP auth
-    const [, emailDomain] = email.split("@");
-    if (emailDomain) {
-      const { db } = await import("../../db/index.js");
-      const { domains } = await import("../../db/schema.js");
-      const { eq } = await import("drizzle-orm");
-      const domain = await db.query.domains.findFirst({ where: eq(domains.domainName, emailDomain) });
-      if (domain && !domain.verified) {
-        return reply.status(403).send({ message: "Domain not verified. Please complete DNS setup before using email." });
-      }
-      if (domain && (!domain.dkimConfigured || !domain.spfConfigured)) {
-        return reply.status(403).send({ message: "Domain DNS incomplete. DKIM and SPF must be configured before using email." });
-      }
+    if (!localPart || !emailDomain) {
+      return reply.status(401).send({ message: "Invalid email or password" });
     }
 
+    // DB pre-check — fail fast without touching IMAP
+    const { db } = await import("../../db/index.js");
+    const { domains, mailboxes } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+
+    // Check domain exists and is verified
+    const domain = await db.query.domains.findFirst({ where: eq(domains.domainName, emailDomain) });
+    if (!domain) {
+      return reply.status(401).send({ message: "Invalid email or password" });
+    }
+    if (!domain.verified) {
+      return reply.status(403).send({ message: "Domain not verified. Please complete DNS setup before using email." });
+    }
+    if (!domain.dkimConfigured || !domain.spfConfigured) {
+      return reply.status(403).send({ message: "Domain DNS incomplete. DKIM and SPF must be configured before using email." });
+    }
+
+    // Check mailbox exists and is active — avoids IMAP connection for non-existent users
+    const mailbox = await db.query.mailboxes.findFirst({
+      where: and(eq(mailboxes.domainId, domain.id), eq(mailboxes.localPart, localPart.toLowerCase())),
+    });
+    if (!mailbox || mailbox.status !== "active") {
+      return reply.status(401).send({ message: "Invalid email or password" });
+    }
+
+    // Only try IMAP if mailbox exists — validates password via Dovecot
     const valid = await validateCredentials(email, password);
     if (!valid) return reply.status(401).send({ message: "Invalid email or password" });
     const token = await createSession(email, password);

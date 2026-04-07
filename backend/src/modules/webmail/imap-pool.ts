@@ -187,6 +187,7 @@ export async function getImapClient(token: string, email: string, password: stri
 
 /**
  * Validate credentials by attempting an IMAP connection.
+ * Times out after 5 seconds to prevent hanging.
  */
 export async function validateCredentials(email: string, password: string): Promise<boolean> {
   const client = new ImapFlow({
@@ -198,10 +199,12 @@ export async function validateCredentials(email: string, password: string): Prom
     tls: { rejectUnauthorized: false },
   });
   try {
-    await client.connect();
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
+    await Promise.race([client.connect(), timeout]);
     await client.logout();
     return true;
   } catch {
+    client.close().catch(() => {});
     return false;
   }
 }
