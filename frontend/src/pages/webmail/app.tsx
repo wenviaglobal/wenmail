@@ -402,6 +402,8 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const { mode, original } = compose;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachments] = useState<{ filename: string; content: string; contentType: string; size: number }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const totalAttachmentSize = attachments.reduce((sum, a) => sum + a.size, 0);
 
   const isDraft = !!compose.draftUid;
@@ -458,14 +460,30 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
 
   function handleFiles(files: FileList | null) {
     if (!files) return;
-    Array.from(files).forEach(file => {
-      if (file.size > 25 * 1024 * 1024) { setError(`${file.name} exceeds 25 MB limit`); return; }
-      if (totalAttachmentSize + file.size > 50 * 1024 * 1024) { setError("Total attachments exceed 50 MB limit"); return; }
+    const fileList = Array.from(files);
+
+    // Validate before reading
+    for (const file of fileList) {
+      if (file.size > 25 * 1024 * 1024) { setError(`"${file.name}" exceeds 25 MB limit (${formatSize(file.size)})`); return; }
+    }
+    const newTotal = totalAttachmentSize + fileList.reduce((s, f) => s + f.size, 0);
+    if (newTotal > 25 * 1024 * 1024) { setError(`Total attachments would be ${formatSize(newTotal)} — max 25 MB`); return; }
+
+    setUploading(true);
+    let loaded = 0;
+    const total = fileList.length;
+
+    fileList.forEach(file => {
+      setUploadProgress(`Reading ${file.name}...`);
       const reader = new FileReader();
       reader.onload = () => {
         const base64 = (reader.result as string).split(",")[1];
         setAttachments(prev => [...prev, { filename: file.name, content: base64, contentType: file.type || "application/octet-stream", size: file.size }]);
+        loaded++;
+        if (loaded >= total) { setUploading(false); setUploadProgress(""); }
+        else setUploadProgress(`Reading file ${loaded + 1} of ${total}...`);
       };
+      reader.onerror = () => { setError(`Failed to read ${file.name}`); setUploading(false); setUploadProgress(""); };
       reader.readAsDataURL(file);
     });
   }
@@ -485,7 +503,12 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
         await api(`/draft/${compose.draftUid}`, { method: "DELETE" }).catch(() => {});
       }
       onSent();
-    } catch { setError("Failed to send email"); }
+    } catch (err: any) {
+      try {
+        const body = await err?.response?.json?.();
+        setError(body?.message || "Failed to send email — check attachment size");
+      } catch { setError("Failed to send email — the message may be too large"); }
+    }
     setSending(false);
   }
 
@@ -532,10 +555,16 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
           <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Write your message..."
             className="flex-1 p-4 text-sm outline-none resize-none bg-transparent dark:text-white min-h-[200px]" />
 
+          {uploading && (
+            <div className="px-4 py-2 flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20">
+              <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              {uploadProgress}
+            </div>
+          )}
           {error && <div className="px-4 py-2 text-red-500 text-sm">{error}</div>}
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-slate-700">
             <div className="flex items-center gap-2">
-              <button type="submit" disabled={!to || sending}
+              <button type="submit" disabled={!to || sending || uploading}
                 className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
                 <Send size={16} /> {sending ? "Sending..." : "Send"}
               </button>

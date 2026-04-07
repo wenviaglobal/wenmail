@@ -35,6 +35,7 @@ export async function buildApp() {
           ? { target: "pino-pretty", options: { colorize: true } }
           : undefined,
     },
+    bodyLimit: 52428800, // 50 MB — supports large attachments (base64 encoded)
   });
 
   // Plugins
