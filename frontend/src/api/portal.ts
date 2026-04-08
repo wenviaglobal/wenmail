@@ -51,7 +51,7 @@ export async function portalLogin(email: string, password: string) {
 export function portalLogout() {
   localStorage.removeItem("portalAccessToken");
   localStorage.removeItem("portalRefreshToken");
-  window.location.href = "https://wenvia.global";
+  window.location.href = "https://mail.wenvia.global";
 }
 
 export async function getPortalMe() {

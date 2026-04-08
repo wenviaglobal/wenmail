@@ -58,6 +58,10 @@ export function LandingPage() {
             <a href="#pricing" className="hidden md:block text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white dark:hover:text-white">Pricing</a>
             <Link to="/admin/login" className="hidden md:block text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700">Admin</Link>
             <ThemeToggle />
+            <Link to="/mail/login"
+              className="border border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition">
+              Mailbox Login
+            </Link>
             <a href={`https://wpanel.wenvia.global/portal/login`}
               className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm">
               Client Login

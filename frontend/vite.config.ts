@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    allowedHosts: ["wpanel.wenvia.global", "wenvia.global", "mail.wenvia.global"],
+    allowedHosts: ["wpanel.wenvia.global", "wenvia.global", "mail.wenvia.global", "www.mail.wenvia.global"],
     proxy: {
       "/api": {
         target: "http://localhost:3000",
