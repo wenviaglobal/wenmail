@@ -56,7 +56,6 @@ export function LandingPage() {
           <nav className="flex items-center gap-4 md:gap-6">
             <a href="#features" className="hidden md:block text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white dark:hover:text-white">Features</a>
             <a href="#pricing" className="hidden md:block text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white dark:hover:text-white">Pricing</a>
-            <Link to="/admin/login" className="hidden md:block text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700">Admin</Link>
             <ThemeToggle />
             <Link to="/mail/login"
               className="border border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition">
