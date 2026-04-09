@@ -481,6 +481,75 @@ export async function portalRoutes(app: FastifyInstance) {
   // IMPORT/EXPORT INFO
   // ==========================================
 
+  // ==========================================
+  // MAILBOX PASSWORD RESET REQUESTS
+  // ==========================================
+
+  // GET /api/client-portal/password-resets — list pending mailbox reset requests
+  app.get("/password-resets", async (request) => {
+    const clientId = getClientId(request);
+    const { passwordResetRequests } = await import("../../db/schema.js");
+    return db
+      .select()
+      .from(passwordResetRequests)
+      .where(and(
+        eq(passwordResetRequests.clientId, clientId),
+        eq(passwordResetRequests.requestType, "mailbox"),
+      ))
+      .orderBy(desc(passwordResetRequests.createdAt));
+  });
+
+  // GET /api/client-portal/password-resets/pending-count — for dashboard badge
+  app.get("/password-resets/pending-count", async (request) => {
+    const clientId = getClientId(request);
+    const { passwordResetRequests } = await import("../../db/schema.js");
+    const [result] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(passwordResetRequests)
+      .where(and(
+        eq(passwordResetRequests.clientId, clientId),
+        eq(passwordResetRequests.requestType, "mailbox"),
+        eq(passwordResetRequests.status, "pending"),
+      ));
+    return { count: result?.count ?? 0 };
+  });
+
+  // PUT /api/client-portal/password-resets/:id — resolve (client sets new password)
+  app.put<{ Params: { id: string } }>("/password-resets/:id", async (request) => {
+    const clientId = getClientId(request);
+    const { newPassword } = z.object({ newPassword: z.string().min(8) }).parse(request.body);
+    const { passwordResetRequests } = await import("../../db/schema.js");
+
+    const [resetReq] = await db
+      .select()
+      .from(passwordResetRequests)
+      .where(and(eq(passwordResetRequests.id, request.params.id), eq(passwordResetRequests.clientId, clientId)))
+      .limit(1);
+
+    if (!resetReq) throw new NotFoundError("Reset request", request.params.id);
+    if (!resetReq.mailboxId) throw new AppError(400, "Invalid reset request", "INVALID_REQUEST");
+
+    // Update mailbox password
+    const newHash = hashPasswordForDovecot(newPassword);
+    await db.update(mailboxes).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(mailboxes.id, resetReq.mailboxId));
+
+    // Mark request as completed
+    const user = request.user as { id: string };
+    await db.update(passwordResetRequests).set({
+      status: "completed",
+      resolvedBy: user.id,
+      resolvedAt: new Date(),
+    }).where(eq(passwordResetRequests.id, request.params.id));
+
+    // Invalidate IMAP pool
+    try {
+      const { invalidateByEmail } = await import("../../modules/webmail/imap-pool.js");
+      invalidateByEmail(resetReq.email);
+    } catch {}
+
+    return { message: "Password reset completed" };
+  });
+
   // GET /api/client-portal/migration/info
   // GET /api/client-portal/mail-settings — IMAP/SMTP/webmail info for client setup instructions
   app.get("/mail-settings", async () => {

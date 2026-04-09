@@ -62,6 +62,39 @@ async function authed(request: any, reply: any) {
   }
 }
 
+// Track failed login attempts per email — cooldown after 5 failures
+const failedAttempts = new Map<string, { count: number; lockedUntil: number }>();
+const MAX_ATTEMPTS = 5;
+const COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+
+function checkCooldown(email: string): string | null {
+  const entry = failedAttempts.get(email);
+  if (!entry) return null;
+  if (entry.lockedUntil > Date.now()) {
+    const mins = Math.ceil((entry.lockedUntil - Date.now()) / 60000);
+    return `Too many failed attempts. Try again in ${mins} minute(s).`;
+  }
+  if (entry.lockedUntil < Date.now()) failedAttempts.delete(email);
+  return null;
+}
+
+function recordFailure(email: string) {
+  const entry = failedAttempts.get(email) || { count: 0, lockedUntil: 0 };
+  entry.count++;
+  if (entry.count >= MAX_ATTEMPTS) entry.lockedUntil = Date.now() + COOLDOWN_MS;
+  failedAttempts.set(email, entry);
+}
+
+function clearFailures(email: string) { failedAttempts.delete(email); }
+
+// Cleanup old entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, entry] of failedAttempts) {
+    if (entry.lockedUntil < now) failedAttempts.delete(email);
+  }
+}, 10 * 60 * 1000);
+
 export async function webmailRoutes(app: FastifyInstance) {
 
   // ==========================================
@@ -75,6 +108,10 @@ export async function webmailRoutes(app: FastifyInstance) {
     if (!localPart || !emailDomain) {
       return reply.status(401).send({ message: "Invalid email or password" });
     }
+
+    // Cooldown check — block after 5 failed attempts
+    const cooldownMsg = checkCooldown(email);
+    if (cooldownMsg) return reply.status(429).send({ message: cooldownMsg });
 
     // DB pre-check — fail fast without touching IMAP
     const { db } = await import("../../db/index.js");
@@ -103,9 +140,50 @@ export async function webmailRoutes(app: FastifyInstance) {
 
     // Only try IMAP if mailbox exists — validates password via Dovecot
     const valid = await validateCredentials(email, password);
-    if (!valid) return reply.status(401).send({ message: "Invalid email or password" });
+    if (!valid) {
+      recordFailure(email);
+      const entry = failedAttempts.get(email);
+      const remaining = MAX_ATTEMPTS - (entry?.count || 0);
+      return reply.status(401).send({ message: remaining > 0 ? `Invalid password. ${remaining} attempt(s) remaining.` : `Too many failed attempts. Account locked for 15 minutes.` });
+    }
+    clearFailures(email);
     const token = await createSession(email, password);
     return { token, email };
+  });
+
+  // POST /api/webmail/forgot-password — mail user requests password reset
+  app.post("/forgot-password", { config: { rateLimit: { max: 5, timeWindow: "5 minutes" } } }, async (request, reply) => {
+    const { email } = z.object({ email: z.string().email() }).parse(request.body);
+    const [localPart, emailDomain] = email.split("@");
+    if (!localPart || !emailDomain) return { message: "If the account exists, a reset request has been submitted." };
+
+    const { db } = await import("../../db/index.js");
+    const { domains, mailboxes, passwordResetRequests } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+
+    const domain = await db.query.domains.findFirst({ where: eq(domains.domainName, emailDomain) });
+    if (!domain) return { message: "If the account exists, a reset request has been submitted." };
+
+    const mailbox = await db.query.mailboxes.findFirst({
+      where: and(eq(mailboxes.domainId, domain.id), eq(mailboxes.localPart, localPart.toLowerCase())),
+    });
+    if (!mailbox) return { message: "If the account exists, a reset request has been submitted." };
+
+    // Check for existing pending request
+    const existing = await db.query.passwordResetRequests.findFirst({
+      where: and(eq(passwordResetRequests.email, email.toLowerCase()), eq(passwordResetRequests.status, "pending")),
+    });
+
+    if (!existing) {
+      await db.insert(passwordResetRequests).values({
+        requestType: "mailbox",
+        mailboxId: mailbox.id,
+        clientId: mailbox.clientId,
+        email: email.toLowerCase(),
+      });
+    }
+
+    return { message: "If the account exists, a reset request has been submitted." };
   });
 
   app.post("/logout", async (request) => {

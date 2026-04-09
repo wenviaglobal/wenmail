@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Mail } from "lucide-react";
+import { Mail, Eye, EyeOff } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 
 export function WebmailLoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,6 +37,22 @@ export function WebmailLoginPage() {
     }
   }
 
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotLoading(true);
+    try {
+      await fetch("/api/webmail/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      setForgotSent(true);
+    } catch {
+      setForgotSent(true);
+    }
+    setForgotLoading(false);
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 px-4">
       <div className="w-full max-w-sm">
@@ -46,27 +67,75 @@ export function WebmailLoginPage() {
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">Sign in to your mailbox</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm px-3 py-2 rounded-lg">{error}</div>}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@yourdomain.com"
-                className="w-full px-3 py-2.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
-            </div>
-            <button type="submit" disabled={loading}
-              className="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition shadow-sm">
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
+          {!showForgot ? (
+            <>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {error && <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm px-3 py-2 rounded-lg">{error}</div>}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@yourdomain.com"
+                    className="w-full px-3 py-2.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                  <div className="relative">
+                    <input type={showPw ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-3 py-2.5 pr-10 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+                    <button type="button" onClick={() => setShowPw(!showPw)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-white">
+                      {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <button type="submit" disabled={loading}
+                  className="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition shadow-sm">
+                  {loading ? "Signing in..." : "Sign In"}
+                </button>
+              </form>
+              <button onClick={() => { setShowForgot(true); setForgotEmail(email); }}
+                className="w-full text-center text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-4">
+                Forgot Password?
+              </button>
+            </>
+          ) : (
+            <>
+              {!forgotSent ? (
+                <form onSubmit={handleForgot} className="space-y-4">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Enter your email address and we'll notify your organization's admin to reset your password.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
+                    <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="you@yourdomain.com"
+                      className="w-full px-3 py-2.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+                  </div>
+                  <button type="submit" disabled={forgotLoading}
+                    className="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition">
+                    {forgotLoading ? "Submitting..." : "Request Password Reset"}
+                  </button>
+                </form>
+              ) : (
+                <div className="text-center py-4">
+                  <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Mail size={20} className="text-green-600" />
+                  </div>
+                  <h3 className="font-semibold text-slate-800 dark:text-white mb-2">Request Submitted</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Your organization's admin has been notified. They will reset your password and provide you with the new credentials.
+                  </p>
+                </div>
+              )}
+              <button onClick={() => { setShowForgot(false); setForgotSent(false); }}
+                className="w-full text-center text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-4">
+                Back to Login
+              </button>
+            </>
+          )}
 
-          <div className="flex items-center justify-between mt-4">
-            <a href="/setup-help.html" target="_blank" className="text-xs text-indigo-600 hover:underline">Setup Guide</a>
+          <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+            <a href="/setup-help.html" target="_blank" className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Setup Guide</a>
             <ThemeToggle />
           </div>
         </div>

@@ -317,7 +317,9 @@ export const blocklist = pgTable("blocklist", {
 
 export const passwordResetRequests = pgTable("password_reset_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientUserId: uuid("client_user_id").notNull().references(() => clientUsers.id, { onDelete: "cascade" }),
+  requestType: varchar("request_type", { length: 20 }).default("portal"), // portal | mailbox
+  clientUserId: uuid("client_user_id").references(() => clientUsers.id, { onDelete: "cascade" }), // for portal resets
+  mailboxId: uuid("mailbox_id").references(() => mailboxes.id, { onDelete: "cascade" }), // for mailbox resets
   clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   email: varchar("email", { length: 255 }).notNull(),
   status: varchar("status", { length: 20 }).default("pending"),

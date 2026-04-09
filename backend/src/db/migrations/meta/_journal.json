@@ -36,6 +36,13 @@
       "when": 1775365615800,
       "tag": "0004_spooky_magneto",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775716156387,
+      "tag": "0005_curly_gorilla_man",
+      "breakpoints": true
     }
   ]
 }
