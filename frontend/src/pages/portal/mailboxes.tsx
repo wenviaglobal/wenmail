@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical } from "lucide-react";
+import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical, Eye, EyeOff, KeyRound, Power, PowerOff, X } from "lucide-react";
 import { portalApi } from "../../api/portal";
 import { type Domain } from "../../api/domains";
 import { type Mailbox } from "../../api/mailboxes";
@@ -91,49 +91,13 @@ export function PortalMailboxesPage() {
     },
     {
       key: "actions", header: "", render: (m: Mailbox) => (
-        <div className="relative group">
-          <button className="text-gray-400 hover:text-gray-600 p-1">
-            <MoreVertical size={16} />
-          </button>
-          <div className="hidden group-hover:block absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg z-10 py-1 min-w-[160px]">
-            {m.status === "active" ? (
-              <>
-                <button onClick={() => {
-                  const pw = prompt(`New password for ${m.localPart}@${m.domainName} (min 8 chars):`);
-                  if (pw && pw.length >= 8) {
-                    portalApi.put(`mailboxes/${m.id}`, { json: { password: pw } }).json()
-                      .then(() => alert("Password changed successfully"))
-                      .catch(() => alert("Failed to change password"));
-                  } else if (pw) { alert("Password must be at least 8 characters"); }
-                }}
-                  className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-                  Change Password
-                </button>
-                <button onClick={() => { if (confirm(`Disable ${m.localPart}@${m.domainName}?`)) deleteMutation.mutate(m.id); }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 border-t border-slate-100">
-                  Disable Mailbox
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => {
-                  portalApi.put(`mailboxes/${m.id}`, { json: { status: "active" } }).json()
-                    .then(() => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] }));
-                }}
-                  className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30">
-                  Re-enable
-                </button>
-                <button onClick={() => {
-                  if (confirm(`PERMANENTLY DELETE ${m.localPart}@${m.domainName}?\n\nThis will remove all emails and cannot be undone.`))
-                    permanentDeleteMutation.mutate(m.id);
-                }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 border-t border-slate-100">
-                  Delete Forever
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+        <MailboxActions
+          mailbox={m}
+          onDisable={() => deleteMutation.mutate(m.id)}
+          onReEnable={() => { portalApi.put(`mailboxes/${m.id}`, { json: { status: "active" } }).json().then(() => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] })); }}
+          onDelete={() => permanentDeleteMutation.mutate(m.id)}
+          onPasswordChange={(pw) => portalApi.put(`mailboxes/${m.id}`, { json: { password: pw } }).json().then(() => queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] }))}
+        />
       ),
     },
   ];
@@ -318,6 +282,182 @@ export function PortalMailboxesPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ==========================================
+// MAILBOX ACTIONS — popover + password modal
+// ==========================================
+
+function MailboxActions({ mailbox: m, onDisable, onReEnable, onDelete, onPasswordChange }: {
+  mailbox: Mailbox;
+  onDisable: () => void;
+  onReEnable: () => void;
+  onDelete: () => void;
+  onPasswordChange: (pw: string) => Promise<any>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [showPwModal, setShowPwModal] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(!open)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-700 transition">
+        <MoreVertical size={16} />
+      </button>
+
+      {open && !showPwModal && (
+        <div className="absolute right-0 bottom-full mb-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-xl z-50 py-1.5 min-w-[180px] animate-in fade-in">
+          {m.status === "active" ? (
+            <>
+              <button onClick={() => { setOpen(false); setShowPwModal(true); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2.5 transition">
+                <KeyRound size={14} className="text-indigo-500" /> Change Password
+              </button>
+              <button onClick={() => { setOpen(false); if (confirm(`Disable ${m.localPart}@${m.domainName}?`)) onDisable(); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 border-t border-gray-100 dark:border-slate-700 transition">
+                <PowerOff size={14} /> Disable Mailbox
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => { setOpen(false); onReEnable(); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-2.5 transition">
+                <Power size={14} /> Re-enable
+              </button>
+              <button onClick={() => { setOpen(false); if (confirm(`PERMANENTLY DELETE ${m.localPart}@${m.domainName}?\n\nThis will remove all emails and cannot be undone.`)) onDelete(); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 border-t border-gray-100 dark:border-slate-700 transition">
+                <Trash2 size={14} /> Delete Forever
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {showPwModal && (
+        <PasswordChangeModal
+          email={`${m.localPart}@${m.domainName}`}
+          onClose={() => setShowPwModal(false)}
+          onSave={async (pw) => { await onPasswordChange(pw); setShowPwModal(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// PASSWORD CHANGE MODAL
+// ==========================================
+
+function PasswordChangeModal({ email, onClose, onSave }: {
+  email: string;
+  onClose: () => void;
+  onSave: (password: string) => Promise<void>;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const strength = password.length === 0 ? 0 : password.length < 8 ? 1 : password.length < 12 ? 2 : /[A-Z]/.test(password) && /[0-9]/.test(password) && /[^a-zA-Z0-9]/.test(password) ? 4 : 3;
+  const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"][strength];
+  const strengthColor = ["", "bg-red-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"][strength];
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (password !== confirm) { setError("Passwords do not match"); return; }
+    setSaving(true);
+    try {
+      await onSave(password);
+      setSuccess(true);
+      setTimeout(onClose, 1500);
+    } catch { setError("Failed to change password"); }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+          <div>
+            <h3 className="font-semibold dark:text-white flex items-center gap-2"><KeyRound size={16} className="text-indigo-500" /> Change Password</h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{email}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1"><X size={18} /></button>
+        </div>
+
+        {success ? (
+          <div className="p-8 text-center">
+            <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CheckCircle size={24} className="text-green-600" />
+            </div>
+            <p className="font-medium dark:text-white">Password Changed</p>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">The user can now log in with the new password.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">New Password</label>
+              <div className="relative">
+                <input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
+                  placeholder="Min 8 characters"
+                  className="w-full px-3 py-2.5 pr-10 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none" />
+                <button type="button" onClick={() => setShowPw(!showPw)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-white">
+                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {password.length > 0 && (
+                <div className="mt-2">
+                  <div className="flex gap-1">
+                    {[1,2,3,4].map(i => (
+                      <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i <= strength ? strengthColor : "bg-gray-200 dark:bg-slate-600"}`} />
+                    ))}
+                  </div>
+                  <p className={`text-xs mt-1 ${strength <= 1 ? "text-red-500" : strength === 2 ? "text-yellow-600" : strength === 3 ? "text-blue-600" : "text-green-600"}`}>{strengthLabel}</p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Confirm Password</label>
+              <input type={showPw ? "text" : "password"} value={confirm} onChange={e => setConfirm(e.target.value)}
+                placeholder="Re-enter password"
+                className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none dark:bg-slate-700 dark:text-white ${confirm && confirm !== password ? "border-red-400 dark:border-red-500" : "border-gray-300 dark:border-slate-600"}`} />
+              {confirm && confirm !== password && (
+                <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+              )}
+            </div>
+
+            {error && <div className="text-red-500 text-sm bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</div>}
+
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={!password || !confirm || password !== confirm || password.length < 8 || saving}
+                className="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition">
+                {saving ? "Saving..." : "Update Password"}
+              </button>
+              <button type="button" onClick={onClose}
+                className="px-4 py-2.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition">
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
