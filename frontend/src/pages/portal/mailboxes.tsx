@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical, Eye, EyeOff, KeyRound, Power, PowerOff, X } from "lucide-react";
+import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical, Eye, EyeOff, KeyRound, Power, PowerOff, X, Bell } from "lucide-react";
 import { portalApi } from "../../api/portal";
 import { type Domain } from "../../api/domains";
 import { type Mailbox } from "../../api/mailboxes";
@@ -29,6 +29,7 @@ export function PortalMailboxesPage() {
   const [selectedDomain, setSelectedDomain] = useState<string>("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ localPart: "", password: "", displayName: "" });
+  const [resetTarget, setResetTarget] = useState<{ requestId: string; mailbox: Mailbox } | null>(null);
 
   const { data: mailSettings } = useQuery({
     queryKey: ["mail-settings"],
@@ -39,6 +40,13 @@ export function PortalMailboxesPage() {
     queryKey: ["portal-domains"],
     queryFn: () => portalApi.get("domains").json<Domain[]>(),
   });
+
+  const { data: resetRequests = [] } = useQuery({
+    queryKey: ["portal-reset-requests"],
+    queryFn: () => portalApi.get("password-resets").json<Array<{ id: string; email: string; status: string; createdAt: string }>>(),
+    refetchInterval: 30000,
+  });
+  const pendingResets = resetRequests.filter(r => r.status === "pending");
 
   const { data: mailboxes = [], isLoading } = useQuery({
     queryKey: ["portal-mailboxes", selectedDomain],
@@ -113,6 +121,38 @@ export function PortalMailboxesPage() {
           </button>
         )}
       </div>
+
+      {/* Password reset requests banner */}
+      {pendingResets.length > 0 && (
+        <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell size={16} className="text-amber-600" />
+            <h3 className="font-semibold text-amber-800 dark:text-amber-300 text-sm">{pendingResets.length} Password Reset Request(s)</h3>
+          </div>
+          <div className="space-y-2">
+            {pendingResets.map(req => (
+              <div key={req.id} className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-4 py-3 border border-amber-100 dark:border-amber-900/30">
+                <div>
+                  <p className="font-medium text-sm dark:text-white">{req.email}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">Requested {new Date(req.createdAt).toLocaleString()}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => {
+                    // Find the mailbox in current list and trigger password change
+                    const mb = mailboxes.find(m => `${m.localPart}@${m.domainName}` === req.email);
+                    if (mb) {
+                      setResetTarget({ requestId: req.id, mailbox: mb });
+                    }
+                  }}
+                    className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-indigo-700 transition flex items-center gap-1">
+                    <KeyRound size={12} /> Reset Password
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Domain selector */}
       <div className="mb-4">
@@ -281,6 +321,21 @@ export function PortalMailboxesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Reset password modal triggered from banner */}
+      {resetTarget && (
+        <PasswordChangeModal
+          email={`${resetTarget.mailbox.localPart}@${resetTarget.mailbox.domainName}`}
+          onClose={() => setResetTarget(null)}
+          onSave={async (pw) => {
+            await portalApi.put(`password-resets/${resetTarget.requestId}`, { json: { newPassword: pw } }).json();
+            queryClient.invalidateQueries({ queryKey: ["portal-reset-requests"] });
+            queryClient.invalidateQueries({ queryKey: ["portal-reset-count"] });
+            queryClient.invalidateQueries({ queryKey: ["portal-mailboxes"] });
+            setResetTarget(null);
+          }}
+        />
       )}
     </div>
   );
