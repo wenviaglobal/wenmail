@@ -3,8 +3,8 @@ import { redis } from "../../lib/redis.js";
 import { logger } from "../../lib/logger.js";
 
 const MAX_CONNECTIONS_PER_MAILBOX = 2;
-const SESSION_TTL = 24 * 60 * 60; // 24 hours in seconds
-const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const SESSION_TTL = 24 * 60 * 60;
+const IDLE_TIMEOUT = 5 * 60 * 1000;
 
 interface PooledConnection {
   client: ImapFlow;
@@ -20,10 +20,7 @@ interface SessionData {
   expiresAt: number;
 }
 
-// IMAP connections stay in-memory (can't serialize TCP sockets)
 const pool = new Map<string, PooledConnection>();
-
-// Track connections per email for per-mailbox limit
 const connectionsByEmail = new Map<string, Set<string>>();
 
 // Cleanup stale connections every 60 seconds
@@ -31,12 +28,18 @@ setInterval(() => {
   const now = Date.now();
   for (const [token, conn] of pool) {
     if (now - conn.lastUsed > IDLE_TIMEOUT || !conn.connected) {
-      conn.client.logout().catch(() => {});
+      safeClose(conn.client);
       pool.delete(token);
       removeFromEmailTracker(conn.email, token);
     }
   }
 }, 60_000);
+
+/** Safely close an IMAP client — never throws */
+function safeClose(client: ImapFlow) {
+  try { client.logout().catch(() => {}); } catch {}
+  try { client.close().catch(() => {}); } catch {}
+}
 
 function addToEmailTracker(email: string, token: string) {
   if (!connectionsByEmail.has(email)) connectionsByEmail.set(email, new Set());
@@ -67,7 +70,6 @@ export async function createSession(email: string, password: string): Promise<st
   try {
     await redis.set(`${SESSION_PREFIX}${token}`, JSON.stringify(session), "EX", SESSION_TTL);
   } catch {
-    // Redis down — won't persist but session still works via pool
     logger.warn("Redis unavailable — session not persisted");
   }
   return token;
@@ -88,7 +90,6 @@ export async function getSession(request: { headers: { authorization?: string };
     }
     return session;
   } catch {
-    // Redis down — check if we have the connection in pool (fallback)
     const conn = pool.get(token);
     if (conn?.connected) return { email: conn.email, password: conn.password, expiresAt: Date.now() + 60000 };
     return null;
@@ -107,26 +108,38 @@ export async function destroySession(token: string): Promise<void> {
 function destroyConnection(token: string): void {
   const conn = pool.get(token);
   if (conn) {
-    conn.client.logout().catch(() => {});
+    safeClose(conn.client);
     removeFromEmailTracker(conn.email, token);
     pool.delete(token);
   }
+}
+
+/**
+ * Invalidate ALL pooled connections for a specific email address.
+ * Call this when a mailbox password is changed — forces re-auth on next request.
+ */
+export function invalidateByEmail(email: string): void {
+  const tokens = connectionsByEmail.get(email);
+  if (!tokens) return;
+  for (const token of [...tokens]) {
+    const conn = pool.get(token);
+    if (conn) {
+      safeClose(conn.client);
+      pool.delete(token);
+    }
+    tokens.delete(token);
+  }
+  connectionsByEmail.delete(email);
+  logger.info({ email }, "IMAP pool invalidated for email (password changed)");
 }
 
 // ==========================================
 // IMAP CONNECTION POOL
 // ==========================================
 
-/**
- * Get or create a persistent IMAP connection for this session.
- * - Reuses connections across requests (no reconnect per click)
- * - Max 2 connections per mailbox user
- * - Uses TLS on port 993 (localhost)
- */
 export async function getImapClient(token: string, email: string, password: string): Promise<ImapFlow> {
   const existing = pool.get(token);
 
-  // Reuse if connected
   if (existing?.connected) {
     existing.lastUsed = Date.now();
     return existing.client;
@@ -134,7 +147,7 @@ export async function getImapClient(token: string, email: string, password: stri
 
   // Clean up broken connection
   if (existing) {
-    existing.client.logout().catch(() => {});
+    safeClose(existing.client);
     removeFromEmailTracker(existing.email, token);
     pool.delete(token);
   }
@@ -142,7 +155,6 @@ export async function getImapClient(token: string, email: string, password: stri
   // Check per-mailbox connection limit
   const count = getConnectionCount(email);
   if (count >= MAX_CONNECTIONS_PER_MAILBOX) {
-    // Evict oldest idle connection for this email
     const tokens = connectionsByEmail.get(email)!;
     let oldestToken: string | null = null;
     let oldestTime = Infinity;
@@ -152,7 +164,7 @@ export async function getImapClient(token: string, email: string, password: stri
     }
     if (oldestToken) {
       const old = pool.get(oldestToken)!;
-      old.client.logout().catch(() => {});
+      safeClose(old.client);
       pool.delete(oldestToken);
       removeFromEmailTracker(email, oldestToken);
     }
@@ -168,14 +180,16 @@ export async function getImapClient(token: string, email: string, password: stri
     tls: { rejectUnauthorized: false },
   });
 
+  // Graceful error handling — mark as disconnected, never crash
   client.on("close", () => {
     const conn = pool.get(token);
     if (conn) conn.connected = false;
   });
 
-  client.on("error", () => {
+  client.on("error", (err: Error) => {
     const conn = pool.get(token);
     if (conn) conn.connected = false;
+    logger.debug({ email, err: err.message }, "IMAP connection error (will reconnect on next request)");
   });
 
   await client.connect();
@@ -198,13 +212,15 @@ export async function validateCredentials(email: string, password: string): Prom
     logger: false,
     tls: { rejectUnauthorized: false },
   });
+  // Catch errors on the client to prevent unhandled events
+  client.on("error", () => {});
   try {
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
     await Promise.race([client.connect(), timeout]);
     await client.logout();
     return true;
   } catch {
-    client.close().catch(() => {});
+    safeClose(client);
     return false;
   }
 }

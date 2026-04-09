@@ -3,6 +3,18 @@ import { env } from "./config/env.js";
 import { startWorkers } from "./workers/index.js";
 import { logger } from "./lib/logger.js";
 
+// ==========================================
+// Global crash protection — never let one bad
+// IMAP connection or unhandled error kill the server
+// ==========================================
+process.on("uncaughtException", (err) => {
+  logger.error({ err: err.message, stack: err.stack }, "Uncaught exception (non-fatal, server continues)");
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error({ reason: String(reason) }, "Unhandled promise rejection (non-fatal, server continues)");
+});
+
 async function main() {
   const app = await buildApp();
 

@@ -134,6 +134,17 @@ export async function updateMailbox(id: string, input: UpdateMailboxInput) {
 
   if (!mailbox) throw new NotFoundError("Mailbox", id);
 
+  // Invalidate IMAP pool if password changed
+  if (input.password) {
+    try {
+      const domain = await db.query.domains.findFirst({ where: eq(domains.id, mailbox.domainId) });
+      if (domain) {
+        const { invalidateByEmail } = await import("../webmail/imap-pool.js");
+        invalidateByEmail(`${mailbox.localPart}@${domain.domainName}`);
+      }
+    } catch {}
+  }
+
   await reloadDovecot();
   return mailbox;
 }

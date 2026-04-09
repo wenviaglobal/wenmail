@@ -300,6 +300,16 @@ export async function portalRoutes(app: FastifyInstance) {
 
     const [mailbox] = await db.update(mailboxes).set(updates).where(eq(mailboxes.id, request.params.id)).returning();
     await reloadDovecot();
+
+    // Invalidate IMAP pool if password changed — forces re-login with new password
+    if (body.password && existing.domainId) {
+      const dom = await db.query.domains.findFirst({ where: eq(domains.id, existing.domainId) });
+      if (dom) {
+        const { invalidateByEmail } = await import("../../modules/webmail/imap-pool.js");
+        invalidateByEmail(`${existing.localPart}@${dom.domainName}`);
+      }
+    }
+
     return mailbox;
   });
 
