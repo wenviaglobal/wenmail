@@ -33,7 +33,7 @@ JWT auth flow, route guard, layout, and sidebar.
 - Backend: Node.js 22 + Fastify 5 + TypeScript + Drizzle ORM + Zod
 - Database: PostgreSQL 16 + Redis 7 (ioredis)
 - Workers: BullMQ (in-process, same Node.js instance)
-- Frontend: React 19 + Vite 6 + TailwindCSS 4 + TanStack Query + ky
+- Frontend: React 19 + Vite 6 + TailwindCSS 4 + TanStack Query + ky + Tiptap (rich text)
 - Mail: Postfix + Dovecot + Rspamd (on host, not Docker)
 
 ---
@@ -146,7 +146,7 @@ Config:      max_connections = 300
 | `dns_checks` | DNS verification history | id (bigserial), domain_id (FK), check_type, status, raw_result, checked_at |
 | `platform_settings` | Key-value config store | key (PK, varchar 100), value (text), label, group ('server'/'mail'/'branding'), updated_at |
 | `audit_log` | Admin action history | id (bigserial), actor_type, actor_id, action, target_type, target_id, details (JSONB), ip_address (inet) |
-| `password_reset_requests` | DB-based password reset (no email) | id (uuid), client_user_id (FK), client_id (FK), email, status ('pending'/'completed'/'rejected'), resolved_by (FK admins), resolved_at, notes, created_at |
+| `password_reset_requests` | DB-based password reset (no email) | id (uuid), client_user_id (FK), client_id (FK), mailbox_id (FK, nullable), email, request_type ('portal'/'mailbox'), status ('pending'/'completed'/'rejected'), resolved_by (FK admins), resolved_at, notes, created_at |
 | `blocklist` | Custom bans (IP/email/domain) | id (uuid), type ('ip'/'email'/'domain'), value, reason, permanent, expires_at, created_by (FK admins), created_at |
 
 #### Unique Constraints
@@ -519,9 +519,16 @@ Endpoints:
 ### Module: billing (Admin) — Password Resets
 ```
 Location:    backend/src/modules/billing/
+Description: Three reset flows — mail user->client (mailbox type), client->admin (portal type), password change modal
 Endpoints (additional, registered alongside billing routes):
-  GET    /api/admin/password-resets        -> list all password reset requests (pending/completed/rejected)
+  GET    /api/admin/password-resets        -> list all password reset requests (pending/completed/rejected, includes request_type)
   PUT    /api/admin/password-resets/:id    -> resolve a request (admin sets new password, marks completed/rejected)
+Reset Flow:
+  1. Mail user -> Client: mailbox user requests via webmail forgot-password (request_type='mailbox', mailbox_id set)
+     Client sees notification bell + banner in portal to resolve it
+  2. Client -> Admin: client user requests via portal forgot-password (request_type='portal')
+     Admin resolves from password-resets page
+  3. Password change modal: strength indicator, confirm field, eye toggle (replaces browser prompt)
 ```
 
 ### Background Workers (BullMQ)
@@ -533,16 +540,18 @@ Used By:     runs on schedule via BullMQ repeatable jobs
 Description: Periodic tasks that run inside the same Node.js process
 Files:
   index.ts                -> startWorkers() — creates all workers + registers schedules
-  queues.ts               -> queue definitions (dns-check, quota-sync, log-cleanup, domain-setup)
+  queues.ts               -> queue definitions (dns-check, quota-sync, log-cleanup, domain-setup, mail-log-sync)
   dns-check.worker.ts     -> re-verify DNS records for all active domains (hourly, cron: 0 * * * *)
   quota-sync.worker.ts    -> sync mailbox storage usage from Dovecot (every 6h, cron: 0 */6 * * *)
   log-cleanup.worker.ts   -> delete old mail logs (daily at 3 AM, cron: 0 3 * * *)
   domain-setup.worker.ts  -> async domain provisioning (event-driven, dispatched on domain create)
+  mail-log.worker.ts      -> parse Postfix syslog, write delivery records to mail_logs table (every 5 min)
 Queues:
   dns-check       -> repeatable (hourly)
   quota-sync      -> repeatable (every 6 hours)
   log-cleanup     -> repeatable (daily at 3 AM)
   domain-setup    -> on-demand (triggered when a domain is created)
+  mail-log-sync   -> repeatable (every 5 minutes)
 ```
 
 ### Mail Integration Layer
@@ -574,10 +583,19 @@ IMAP Connection Pooling:
 Endpoints:
   POST   /api/webmail/ensure-folder       -> ensure an IMAP folder exists (creates if missing)
   POST   /api/webmail/change-password     -> change mailbox password from webmail
+Compose Window:
+  - Rich text editor (Tiptap) — bold, italic, underline, bullet/ordered lists, links, blockquotes, undo/redo
+  - Three-state window: minimize / default / expanded (95vw x 92vh)
+  - Gmail-style email chips for To/CC/BCC — type+Enter to add, X to remove, double-click to edit, paste multiple
+  - Drag-and-drop file attachments
+  - New components: email-chips.tsx, rich-editor.tsx
+Auth:
+  - Login cooldown: 5 failed attempts = 15 min lock per email address
+  - Forgot password: mail user requests reset, client gets notification bell + banner
 Webmail Settings (4 tabs):
   1. General   -> display name, page size
   2. Compose   -> signature editor
-  3. Account   -> change password
+  3. Account   -> change password (strength indicator, confirm field, eye toggle modal)
   4. Mail Setup -> IMAP/SMTP connection info for external clients
 ```
 
@@ -824,11 +842,14 @@ Description: Platform settings editor — server hostname, IP, webmail URL, mail
 Location:    frontend/src/components/
 Type:        frontend (shared)
 Files:
-  layout.tsx            -> admin layout wrapper (sidebar navigation + content area via Outlet)
+  layout.tsx            -> admin layout wrapper (sidebar navigation + notification bell + content area via Outlet)
+  portal-layout.tsx     -> client portal layout wrapper (sidebar navigation + notification bell + content area via Outlet)
   data-table.tsx        -> reusable data table component
   dns-status-badge.tsx  -> green/yellow/red indicator per DNS record type
   quota-bar.tsx         -> visual bar showing storage used vs limit
   stat-card.tsx         -> dashboard summary number card
+  email-chips.tsx       -> Gmail-style email chip input (To/CC/BCC) — type+Enter, X remove, double-click edit, paste multiple
+  rich-editor.tsx       -> Tiptap rich text editor for compose (bold/italic/underline/lists/links/quotes/undo-redo)
 Admin Sidebar Nav Items:
   Dashboard, Clients, Domains, Mailboxes, Aliases, Mail Logs, Audit Logs, Billing, Server Health, Abuse Monitor, Ban Management, Settings
 Icons: lucide-react
@@ -866,7 +887,7 @@ Files:
 ```
 Location:    frontend/src/components/portal-layout.tsx
 Type:        frontend
-Description: Separate sidebar layout for client portal (slate-800 bg, indigo-600 active)
+Description: Separate sidebar layout for client portal (slate-800 bg, indigo-600 active, notification bell with badge count)
 Sidebar Nav Items:
   Dashboard, Getting Started, Domains, Mailboxes, Aliases, Mail Logs, Billing, Import / Export
 Displays: client name + user email in sidebar
@@ -893,7 +914,7 @@ Exports:     portalApi instance, PortalUser type, PortalDashboard type, portalLo
 Location:    frontend/src/pages/portal/
 Type:        frontend
 Files:
-  login.tsx           -> client portal login form (includes "Forgot Password?" flow)
+  login.tsx           -> client portal login form (includes "Forgot Password?" flow, login cooldown: 5 fails = 15 min lock)
   dashboard.tsx       -> client overview — domain/mailbox/alias counts, plan limits, quick actions
   getting-started.tsx -> onboarding guide — steps to set up first domain and mailbox
   domains.tsx         -> manage client's own domains (add, verify, view status)
@@ -1060,7 +1081,7 @@ backend/
       env.ts                            -> Zod-validated environment variables
     db/
       index.ts                          -> Drizzle ORM instance (postgres-js)
-      schema.ts                         -> all 14 table definitions + relations
+      schema.ts                         -> all 15 table definitions + relations
     lib/
       errors.ts                         -> AppError + typed subclasses
       logger.ts                         -> pino logger
@@ -1115,6 +1136,7 @@ backend/
       domain-setup.worker.ts           -> async domain provisioning
       log-cleanup.worker.ts            -> daily old log deletion
       quota-sync.worker.ts             -> periodic storage usage sync
+      mail-log.worker.ts               -> parse Postfix syslog -> mail_logs (every 5 min)
 frontend/
   Dockerfile
   index.html
@@ -1135,12 +1157,14 @@ frontend/
       admin.ts                          -> adminApi: server health, billing, client controls, invoices, payments
       portal.ts                         -> portalApi: separate ky instance for client portal + portalLogin/logout/getMe
     components/
-      layout.tsx                        -> admin sidebar (gray-900) + Outlet wrapper
-      portal-layout.tsx                 -> client portal sidebar (slate-800) + Outlet wrapper
+      layout.tsx                        -> admin sidebar (gray-900) + notification bell + Outlet wrapper
+      portal-layout.tsx                 -> client portal sidebar (slate-800) + notification bell + Outlet wrapper
       data-table.tsx                    -> reusable data table
       dns-status-badge.tsx              -> DNS record status indicator
       quota-bar.tsx                     -> storage usage bar
       stat-card.tsx                     -> dashboard stat card
+      email-chips.tsx                   -> Gmail-style email chip input (To/CC/BCC)
+      rich-editor.tsx                   -> Tiptap rich text compose editor
     hooks/
       use-auth.ts                       -> admin auth state + token management
       use-portal-auth.ts                -> portal auth state + token management (portalAccessToken)
@@ -1170,7 +1194,7 @@ frontend/
         mail.tsx                        -> filterable mail log table
         audit.tsx                       -> admin audit trail
       portal/
-        login.tsx                       -> client portal login form (with forgot password flow)
+        login.tsx                       -> client portal login form (with forgot password flow, login cooldown)
         dashboard.tsx                   -> client overview (counts, plan limits, quick actions)
         getting-started.tsx             -> onboarding guide (first domain + mailbox setup)
         domains.tsx                     -> client domain management (add, verify, view)

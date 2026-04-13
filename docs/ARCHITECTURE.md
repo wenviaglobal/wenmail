@@ -132,6 +132,7 @@ JOBS:
   quota-sync       -> calculate mailbox disk usage     (cron: every 6 hours)
   log-cleanup      -> purge old mail logs              (cron: daily at 3 AM)
   domain-setup     -> verify domain + gen DKIM         (on-demand, triggered by API)
+  mail-log-sync    -> parse Postfix syslog, write to mail_logs table (cron: every 5 min)
 
 WHY NOT a separate worker service:
   - Same codebase, same DB access, same logic
@@ -275,6 +276,7 @@ WHY NOT Next.js:
 | Logging     | **Pino**                   | Structured JSON logs, fast        |
 | Frontend    | **React 19 + Vite 6**     | Fast SPA for admin dashboard + client portal |
 | UI Kit      | **shadcn/ui + TailwindCSS 4** | Production-ready components    |
+| Rich Text   | **Tiptap** (@tiptap/react, starter-kit, extension-link, extension-underline, extension-placeholder) | Compose editor (bold/italic/underline/lists/links/quotes/undo-redo) |
 | HTTP Client | **ky** (frontend)          | Lightweight fetch wrapper         |
 | Router      | **React Router 7**        | Client-side routing               |
 | State       | **TanStack Query**         | Server state management, caching  |
@@ -534,8 +536,10 @@ CREATE TABLE password_reset_requests (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_user_id  UUID NOT NULL REFERENCES client_users(id),
     client_id       UUID NOT NULL REFERENCES clients(id),
+    mailbox_id      UUID REFERENCES mailboxes(id),        -- set when request_type = 'mailbox'
     email           VARCHAR(255) NOT NULL,
-    status          VARCHAR(20) DEFAULT 'pending',     -- pending, completed, rejected
+    request_type    VARCHAR(20) DEFAULT 'portal',          -- portal (client user) | mailbox (mail user)
+    status          VARCHAR(20) DEFAULT 'pending',         -- pending, completed, rejected
     resolved_by     UUID REFERENCES admins(id),
     resolved_at     TIMESTAMPTZ,
     notes           TEXT,
@@ -572,6 +576,7 @@ domains 1--* mailboxes
 domains 1--* aliases
 domains 1--* dns_checks
 client_users 1--* password_reset_requests
+mailboxes 1--* password_reset_requests (mailbox_id, for mailbox resets)
 admins 1--* password_reset_requests (resolved_by)
 ```
 
@@ -658,7 +663,8 @@ backend/
 │   │   ├── dns-check.worker.ts        # Periodic: verify DNS for all domains (hourly)
 │   │   ├── quota-sync.worker.ts       # Periodic: calculate mailbox sizes (every 6h)
 │   │   ├── log-cleanup.worker.ts      # Periodic: purge old logs (daily at 3 AM)
-│   │   └── domain-setup.worker.ts     # On-demand: verify domain + gen DKIM
+│   │   ├── domain-setup.worker.ts     # On-demand: verify domain + gen DKIM
+│   │   └── mail-log.worker.ts         # Periodic: parse Postfix syslog -> mail_logs table (every 5 min)
 │   │
 │   ├── mail/
 │   │   ├── postfix.ts                 # Execute postfix reload, reloadPostfix(), reloadDovecot()
@@ -755,7 +761,9 @@ frontend/
 │   │   ├── data-table.tsx             # Reusable table with sorting/pagination
 │   │   ├── dns-status-badge.tsx       # Color-coded DNS record status
 │   │   ├── quota-bar.tsx              # Storage usage bar
-│   │   └── stat-card.tsx              # Dashboard stat cards
+│   │   ├── stat-card.tsx              # Dashboard stat cards
+│   │   ├── email-chips.tsx            # Gmail-style email chips (To/CC/BCC) — type+Enter, X remove, double-click edit, paste multiple
+│   │   └── rich-editor.tsx            # Tiptap rich text editor (bold/italic/underline/lists/links/quotes/undo-redo)
 │   │
 │   ├── hooks/
 │   │   ├── use-auth.ts               # Admin auth state
@@ -931,11 +939,42 @@ In addition to Roundcube, WenMail includes a custom webmail client built into th
 IMAP connection pooling provides persistent connections per session (max 2 per mailbox),
 backed by Redis sessions, resulting in 13-83x faster webmail performance.
 
+**Compose Window:**
+- Rich text editor (Tiptap) — bold, italic, underline, bullet/ordered lists, links, blockquotes, undo/redo
+- Three-state window: minimize / default / expanded (95vw x 92vh)
+- Gmail-style email chips for To/CC/BCC — type+Enter to add, X to remove, double-click to edit, paste multiple
+- Drag-and-drop file attachments
+
 **Webmail Settings** (4 tabs):
 1. **General** — display name, page size
 2. **Compose** — signature editor
-3. **Account** — change password (POST /api/webmail/change-password)
+3. **Account** — change password (strength indicator, confirm field, eye toggle)
 4. **Mail Setup** — IMAP/SMTP connection info for external clients
+
+**Webmail Auth:**
+- Login cooldown: 5 failed attempts = 15 min lock per email address
+- Forgot password: mail user submits request, client gets notification bell + banner in portal
+
+### Notification Bell
+
+Both admin and client portal layouts include a notification bell icon with badge count.
+Used to surface pending password reset requests. Admin sees all pending resets; client sees
+resets from their mailbox users (with a banner prompt to resolve them).
+
+### Password Reset Flows
+
+Three DB-based reset flows (no email required):
+1. **Mail user -> Client**: mailbox user requests reset via webmail forgot-password; client sees notification bell + banner in portal
+2. **Client -> Admin**: client portal user requests reset via portal forgot-password; admin resolves from billing/password-resets page
+3. **Password change modal**: used by both client portal and webmail — strength indicator, confirm field, eye toggle (replaced browser prompt)
+
+The `password_reset_requests` table uses `request_type` ('portal' or 'mailbox') and optional `mailbox_id`
+to distinguish between portal user resets and mailbox user resets.
+
+### Login Cooldown
+
+5 failed login attempts = 15 minute lock per email address. Applies to webmail login.
+Prevents brute-force attacks at the application level (complements Fail2ban at the infrastructure level).
 
 ### Email Client Setup Instructions
 
