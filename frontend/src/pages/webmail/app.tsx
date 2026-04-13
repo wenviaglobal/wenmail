@@ -5,7 +5,7 @@ import {
   Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
   Forward, Paperclip, Download, CheckSquare, Square, StarOff,
   MailOpen, MailCheck, Settings, Save, Eye, EyeOff, ChevronDown, ChevronUp,
-  Minus, Maximize2, Minimize2, Printer,
+  Minus, Maximize2, Minimize2, Printer, Users,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 import { EmailChips } from "../../components/email-chips";
@@ -248,6 +248,7 @@ export function WebmailApp() {
           <div className="flex items-center justify-between">
             <button onClick={handleLogout} className="text-xs text-gray-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all duration-150"><LogOut size={14} /> Logout</button>
             <div className="flex items-center gap-1">
+              <button onClick={() => navigate("/mail/contacts")} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Contacts"><Users size={16} /></button>
               <button onClick={() => { setShowSettings(true); setSidebarOpen(false); }} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Settings"><Settings size={16} /></button>
               <ThemeToggle />
             </div>

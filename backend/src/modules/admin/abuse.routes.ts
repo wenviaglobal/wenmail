@@ -178,4 +178,28 @@ export async function abuseRoutes(app: FastifyInstance) {
 
     return { alerts, count: alerts.length };
   });
+
+  // GET /api/admin/abuse/abnormal-recipients — detect problematic recipient addresses
+  app.get("/abnormal-recipients", async () => {
+    const last7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Find recipients with high bounce rates
+    const abnormal = await db
+      .select({
+        toAddress: mailLogs.toAddress,
+        total: sql<number>`COUNT(*)`,
+        bounced: sql<number>`COUNT(*) FILTER (WHERE status = 'bounced')`,
+        lastSeen: sql<string>`MAX(created_at)`,
+      })
+      .from(mailLogs)
+      .where(and(eq(mailLogs.direction, "outbound"), gte(mailLogs.createdAt, last7d)))
+      .groupBy(mailLogs.toAddress)
+      .having(sql`COUNT(*) >= 3 AND COUNT(*) FILTER (WHERE status = 'bounced') > 0`);
+
+    return abnormal.map(r => ({
+      ...r,
+      bounceRate: r.total > 0 ? Math.round((r.bounced / r.total) * 100) : 0,
+      status: r.bounced / r.total > 0.5 ? "critical" : "warning",
+    }));
+  });
 }

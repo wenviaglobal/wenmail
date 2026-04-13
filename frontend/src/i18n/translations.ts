@@ -1,0 +1,151 @@
+export type Locale = "en" | "hi";
+
+export const translations: Record<Locale, Record<string, string>> = {
+  en: {
+    // Common
+    "app.name": "WenMail",
+    "common.save": "Save",
+    "common.cancel": "Cancel",
+    "common.delete": "Delete",
+    "common.close": "Close",
+    "common.loading": "Loading...",
+    "common.search": "Search...",
+    "common.actions": "Actions",
+    "common.status": "Status",
+    "common.active": "Active",
+    "common.disabled": "Disabled",
+    "common.submit": "Submit",
+
+    // Auth
+    "auth.login": "Sign In",
+    "auth.logout": "Logout",
+    "auth.email": "Email",
+    "auth.password": "Password",
+    "auth.forgot": "Forgot Password?",
+    "auth.signing_in": "Signing in...",
+
+    // Webmail
+    "mail.compose": "Compose",
+    "mail.inbox": "Inbox",
+    "mail.sent": "Sent",
+    "mail.drafts": "Drafts",
+    "mail.junk": "Junk",
+    "mail.trash": "Trash",
+    "mail.starred": "Starred",
+    "mail.reply": "Reply",
+    "mail.reply_all": "Reply All",
+    "mail.forward": "Forward",
+    "mail.delete": "Delete",
+    "mail.archive": "Archive",
+    "mail.mark_read": "Mark as read",
+    "mail.mark_unread": "Mark as unread",
+    "mail.no_messages": "No messages",
+    "mail.new_message": "New Message",
+    "mail.send": "Send",
+    "mail.attach": "Attach",
+    "mail.to": "To",
+    "mail.cc": "CC",
+    "mail.bcc": "BCC",
+    "mail.subject": "Subject",
+    "mail.settings": "Settings",
+    "mail.contacts": "Contacts",
+
+    // Portal
+    "portal.dashboard": "Dashboard",
+    "portal.domains": "Domains",
+    "portal.mailboxes": "Mailboxes",
+    "portal.aliases": "Aliases",
+    "portal.billing": "Billing",
+    "portal.getting_started": "Getting Started",
+    "portal.import_export": "Import / Export",
+    "portal.mail_logs": "Mail Logs",
+    "portal.create_mailbox": "Create Mailbox",
+    "portal.add_domain": "Add Domain",
+
+    // Landing
+    "landing.hero_title": "Your domain.\nYour email.\nOur infrastructure.",
+    "landing.hero_subtitle": "Give your business professional email under your own domain.",
+    "landing.get_started": "Get Started",
+    "landing.learn_more": "Learn More",
+    "landing.features": "Features",
+    "landing.pricing": "Pricing",
+    "landing.client_login": "Client Login",
+    "landing.mailbox_login": "Mailbox Login",
+  },
+
+  hi: {
+    // Common
+    "app.name": "WenMail",
+    "common.save": "सेव करें",
+    "common.cancel": "रद्द करें",
+    "common.delete": "हटाएं",
+    "common.close": "बंद करें",
+    "common.loading": "लोड हो रहा है...",
+    "common.search": "खोजें...",
+    "common.actions": "कार्रवाई",
+    "common.status": "स्थिति",
+    "common.active": "सक्रिय",
+    "common.disabled": "अक्षम",
+    "common.submit": "जमा करें",
+
+    // Auth
+    "auth.login": "लॉग इन करें",
+    "auth.logout": "लॉग आउट",
+    "auth.email": "ईमेल",
+    "auth.password": "पासवर्ड",
+    "auth.forgot": "पासवर्ड भूल गए?",
+    "auth.signing_in": "लॉग इन हो रहा है...",
+
+    // Webmail
+    "mail.compose": "नया ईमेल",
+    "mail.inbox": "इनबॉक्स",
+    "mail.sent": "भेजे गए",
+    "mail.drafts": "ड्राफ्ट",
+    "mail.junk": "स्पैम",
+    "mail.trash": "ट्रैश",
+    "mail.starred": "तारांकित",
+    "mail.reply": "जवाब दें",
+    "mail.reply_all": "सभी को जवाब दें",
+    "mail.forward": "आगे भेजें",
+    "mail.delete": "हटाएं",
+    "mail.archive": "आर्काइव",
+    "mail.mark_read": "पढ़ा हुआ चिह्नित करें",
+    "mail.mark_unread": "अपठित चिह्नित करें",
+    "mail.no_messages": "कोई संदेश नहीं",
+    "mail.new_message": "नया संदेश",
+    "mail.send": "भेजें",
+    "mail.attach": "संलग्न करें",
+    "mail.to": "प्रति",
+    "mail.cc": "CC",
+    "mail.bcc": "BCC",
+    "mail.subject": "विषय",
+    "mail.settings": "सेटिंग्स",
+    "mail.contacts": "संपर्क",
+
+    // Portal
+    "portal.dashboard": "डैशबोर्ड",
+    "portal.domains": "डोमेन",
+    "portal.mailboxes": "मेलबॉक्स",
+    "portal.aliases": "उपनाम",
+    "portal.billing": "बिलिंग",
+    "portal.getting_started": "शुरू करें",
+    "portal.import_export": "आयात / निर्यात",
+    "portal.mail_logs": "मेल लॉग",
+    "portal.create_mailbox": "मेलबॉक्स बनाएं",
+    "portal.add_domain": "डोमेन जोड़ें",
+
+    // Landing
+    "landing.hero_title": "आपका डोमेन।\nआपका ईमेल।\nहमारा इन्फ्रास्ट्रक्चर।",
+    "landing.hero_subtitle": "अपने व्यवसाय को अपने डोमेन के तहत पेशेवर ईमेल दें।",
+    "landing.get_started": "शुरू करें",
+    "landing.learn_more": "और जानें",
+    "landing.features": "विशेषताएं",
+    "landing.pricing": "मूल्य निर्धारण",
+    "landing.client_login": "ग्राहक लॉगिन",
+    "landing.mailbox_login": "मेलबॉक्स लॉगिन",
+  },
+};
+
+export function t(key: string, locale: Locale = "en"): string {
+  return translations[locale]?.[key] || translations.en[key] || key;
+}

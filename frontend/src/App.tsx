@@ -40,6 +40,7 @@ import { PortalGettingStartedPage } from "./pages/portal/getting-started";
 
 // Webmail pages
 import { WebmailLoginPage } from "./pages/webmail/login";
+import { WebmailContactsPage } from "./pages/webmail/contacts";
 import { WebmailApp } from "./pages/webmail/app";
 
 function AdminProtected({ children }: { children: React.ReactNode }) {
@@ -124,6 +125,7 @@ export function App() {
         {/* ============================== */}
         <Route path="/mail/login" element={<WebmailLoginPage />} />
         <Route path="/mail" element={<WebmailApp />} />
+        <Route path="/mail/contacts" element={<WebmailContactsPage />} />
       </Routes>
     </BrowserRouter>
   );

@@ -194,6 +194,12 @@ export async function webmailRoutes(app: FastifyInstance) {
     return { message: "If the account exists, a reset request has been submitted." };
   });
 
+  // GET /api/webmail/templates — email templates
+  app.get("/templates", async () => {
+    const { emailTemplates } = await import("./templates.js");
+    return emailTemplates;
+  });
+
   // GET /api/webmail/contacts?q=search — contact autocomplete
   app.get("/contacts", async (request, reply) => {
     const session = await getSession(request as any);
@@ -201,6 +207,33 @@ export async function webmailRoutes(app: FastifyInstance) {
     const { q = "" } = request.query as Record<string, string>;
     const { searchContacts } = await import("./contacts.js");
     return searchContacts(session.email, q);
+  });
+
+  // POST /api/webmail/contacts — add a contact manually
+  app.post("/contacts", async (request, reply) => {
+    const session = await getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+    const { email: contactEmail } = z.object({ email: z.string().min(1) }).parse(request.body);
+    const { recordContact } = await import("./contacts.js");
+    await recordContact(session.email, contactEmail);
+    return { message: "Contact added" };
+  });
+
+  // DELETE /api/webmail/contacts — remove a contact
+  app.delete("/contacts", async (request, reply) => {
+    const session = await getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+    const { email: contactEmail } = z.object({ email: z.string().min(1) }).parse(request.body);
+    try {
+      const { redis } = await import("../../lib/redis.js");
+      await redis.zrem(`webmail:contacts:${session.email}`, contactEmail);
+      // Also try with name format
+      const all = await redis.zrevrange(`webmail:contacts:${session.email}`, 0, -1);
+      for (const entry of all) {
+        if (entry.includes(contactEmail)) await redis.zrem(`webmail:contacts:${session.email}`, entry);
+      }
+    } catch {}
+    return { message: "Contact removed" };
   });
 
   app.post("/logout", async (request) => {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings, Save, Server, Mail, Palette } from "lucide-react";
+import { Settings, Save, Server, Mail, Palette, Send } from "lucide-react";
 import { api } from "../../api/client";
 
 interface SettingsMap {
@@ -11,6 +11,7 @@ const groupInfo: Record<string, { icon: typeof Server; title: string; descriptio
   server: { icon: Server, title: "Server Configuration", description: "Your VPS hostname and IP — used in all DNS instructions sent to clients" },
   mail: { icon: Mail, title: "Mail Configuration", description: "Email-related settings for DMARC reports and attachment limits" },
   branding: { icon: Palette, title: "Branding", description: "Platform name and support contact shown to clients" },
+  relay: { icon: Send, title: "Outbound Relay", description: "Configure SMTP relay for outbound email delivery (Brevo, Mailgun, etc.). Set to 'direct' to send from your server." },
 };
 
 export function AdminSettingsPage() {

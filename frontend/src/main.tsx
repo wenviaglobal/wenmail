@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { ThemeContext, useThemeProvider } from "./hooks/use-theme";
+import { LocaleContext, useLocaleProvider } from "./hooks/use-locale";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -13,11 +14,14 @@ const queryClient = new QueryClient({
 
 function Root() {
   const themeCtx = useThemeProvider();
+  const localeCtx = useLocaleProvider();
   return (
     <ThemeContext.Provider value={themeCtx}>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
+      <LocaleContext.Provider value={localeCtx}>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </LocaleContext.Provider>
     </ThemeContext.Provider>
   );
 }

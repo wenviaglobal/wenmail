@@ -13,6 +13,11 @@ const DEFAULTS: Record<string, { value: string; label: string; group: string; hi
   "mail.max_attachment_mb": { value: "25", label: "Max Attachment Size (MB)", group: "mail", hint: "Maximum size of email attachments in megabytes. 25 MB is standard (matches Gmail's limit)." },
   "branding.platform_name": { value: "MailPlatform", label: "Platform Name", group: "branding", hint: "Shown in the client portal header and email notifications. Your business/product name." },
   "branding.support_email": { value: "support@yourplatform.com", label: "Support Email", group: "branding", hint: "Displayed in the client portal for support requests. Clients see this when they need help." },
+  "relay.mode": { value: "direct", label: "Outbound Relay Mode", group: "relay", hint: "direct = send directly from server, relay = send through SMTP relay service (Brevo, Mailgun, etc.)" },
+  "relay.host": { value: "", label: "Relay SMTP Host", group: "relay", hint: "SMTP relay server hostname (e.g., smtp-relay.brevo.com)" },
+  "relay.port": { value: "587", label: "Relay SMTP Port", group: "relay", hint: "Usually 587 (STARTTLS) or 465 (SSL)" },
+  "relay.username": { value: "", label: "Relay Username", group: "relay", hint: "SMTP relay authentication username" },
+  "relay.password": { value: "", label: "Relay Password", group: "relay", hint: "SMTP relay authentication password or API key" },
 };
 
 /**
