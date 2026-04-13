@@ -62,6 +62,23 @@ function formatSize(bytes: number): string {
 }
 function addrStr(a: { name: string; address: string } | null) { return a ? (a.name ? `${a.name} <${a.address}>` : a.address) : ""; }
 
+// Toast for undo send
+function UndoToast({ message, onUndo, onDone }: { message: string; onUndo: () => void; onDone: () => void }) {
+  const [remaining, setRemaining] = useState(5);
+  useEffect(() => {
+    if (remaining <= 0) { onDone(); return; }
+    const t = setTimeout(() => setRemaining(r => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [remaining]);
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 dark:bg-slate-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-4 animate-in fade-in">
+      <span className="text-sm">{message}</span>
+      <span className="text-xs text-gray-400">{remaining}s</span>
+      <button onClick={onUndo} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition">Undo</button>
+    </div>
+  );
+}
+
 export function WebmailApp() {
   const navigate = useNavigate();
   const email = localStorage.getItem("webmailEmail") || "";
@@ -162,7 +179,28 @@ export function WebmailApp() {
   function selectFolder(path: string) { setCurrentFolder(path); setSearchQuery(""); setPage(1); setStarredFilter(false); loadMessages(path, 1); setSidebarOpen(false); }
   function goToPage(p: number) { setPage(p); loadMessages(currentFolder, p); }
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const displayMessages = starredFilter ? messages.filter(m => m.flagged) : messages;
+  // Group by conversation (clean subject)
+  const cleanSubject = (s: string) => s.replace(/^(Re:|Fwd?:|Fw:)\s*/gi, "").trim().toLowerCase();
+  const threadView = localStorage.getItem("wenmail-thread-view") !== "false";
+
+  const displayMessages = (() => {
+    let msgs = starredFilter ? messages.filter(m => m.flagged) : messages;
+    if (!threadView) return msgs;
+    // Group by clean subject — show latest per thread with count
+    const threads = new Map<string, { latest: MsgSummary; count: number; uids: number[] }>();
+    for (const m of msgs) {
+      const key = cleanSubject(m.subject);
+      const existing = threads.get(key);
+      if (!existing) {
+        threads.set(key, { latest: m, count: 1, uids: [m.uid] });
+      } else {
+        existing.count++;
+        existing.uids.push(m.uid);
+        if (new Date(m.date || 0) > new Date(existing.latest.date || 0)) existing.latest = m;
+      }
+    }
+    return Array.from(threads.values()).map(t => ({ ...t.latest, _threadCount: t.count, _threadUids: t.uids }));
+  })();
   function handleLogout() { api("/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem("webmailToken"); localStorage.removeItem("webmailEmail"); navigate("/mail/login"); }
   function toggleSelect(uid: number) { setSelected(prev => { const s = new Set(prev); s.has(uid) ? s.delete(uid) : s.add(uid); return s; }); }
   function selectAll() { setSelected(prev => prev.size === displayMessages.length ? new Set() : new Set(displayMessages.map(m => m.uid))); }
@@ -285,6 +323,7 @@ export function WebmailApp() {
                       {msg.from?.name || msg.from?.address || "Unknown"}
                     </span>
                     <div className="flex items-center gap-1 ml-2 shrink-0">
+                      {(msg as any)._threadCount > 1 && <span className="text-xs bg-gray-200 dark:bg-slate-600 text-gray-600 dark:text-slate-300 px-1 rounded font-medium">{(msg as any)._threadCount}</span>}
                       {msg.hasAttachment && <Paperclip size={10} className="text-gray-400" />}
                       <span className="text-xs text-gray-400 dark:text-slate-500">{formatDate(msg.date)}</span>
                     </div>
@@ -433,6 +472,7 @@ export function WebmailApp() {
 
       {/* Settings modal */}
       {showSettings && <SettingsModal email={email} onClose={() => setShowSettings(false)} />}
+
     </div>
   );
 }

@@ -32,6 +32,7 @@ export async function startWorkers() {
   const { createDomainSetupWorker } = await import("./domain-setup.worker.js");
   const { createDkimRotationWorker } = await import("./dkim-rotation.worker.js");
   const { createMailLogWorker } = await import("./mail-log.worker.js");
+  const { createScheduledSendWorker } = await import("./scheduled-send.worker.js");
 
   initQueues();
 
@@ -41,6 +42,7 @@ export async function startWorkers() {
   const domainWorker = createDomainSetupWorker();
   const dkimWorker = createDkimRotationWorker();
   const mailLogWorker = createMailLogWorker();
+  const scheduledWorker = createScheduledSendWorker();
 
   const dnsQ = getDnsCheckQueue();
   const quotaQ = getQuotaSyncQueue();
@@ -53,7 +55,10 @@ export async function startWorkers() {
   if (dkimQ) await dkimQ.upsertJobScheduler("dkim-rotation-weekly", { pattern: "0 4 * * 0" }); // Sunday 4 AM
 
   const mailLogQ = getMailLogQueue();
-  if (mailLogQ) await mailLogQ.upsertJobScheduler("mail-log-sync-5m", { pattern: "*/5 * * * *" }); // Every 5 minutes
+  if (mailLogQ) await mailLogQ.upsertJobScheduler("mail-log-sync-5m", { pattern: "*/5 * * * *" });
+
+  const scheduledQ = getScheduledSendQueue();
+  if (scheduledQ) await scheduledQ.upsertJobScheduler("scheduled-send-1m", { pattern: "* * * * *" }); // Every minute
 
   logger.info("All workers started and schedules registered");
   return { dnsWorker, quotaWorker, logWorker, domainWorker };

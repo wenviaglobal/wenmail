@@ -92,6 +92,8 @@ export async function buildApp() {
   // Admin routes (JWT with admin role)
   // ==========================================
   await app.register(authRoutes, { prefix: "/api/auth" });
+  const { totpRoutes } = await import("./modules/auth/totp.routes.js");
+  await app.register(totpRoutes, { prefix: "/api/auth/totp" });
   await app.register(clientRoutes, { prefix: "/api/clients" });
   await app.register(domainRoutes, { prefix: "/api" });
   await app.register(mailboxRoutes, { prefix: "/api" });

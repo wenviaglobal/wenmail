@@ -563,6 +563,86 @@ export async function webmailRoutes(app: FastifyInstance) {
   });
 
   // ==========================================
+  // LABELS (IMAP keywords)
+  // ==========================================
+
+  app.post("/label", async (request, reply) => {
+    const ctx = await authed(request, reply);
+    if (!ctx) return;
+    const { client } = ctx;
+    const { uids, folder, label, add } = z.object({
+      uids: z.array(z.number()).min(1), folder: z.string(),
+      label: z.string().min(1).max(50), add: z.boolean(),
+    }).parse(request.body);
+
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const keyword = `$label_${label.replace(/[^a-zA-Z0-9]/g, "_")}`;
+      for (const uid of uids) {
+        if (add) await client.messageFlagsAdd({ uid }, [keyword], { uid: true });
+        else await client.messageFlagsRemove({ uid }, [keyword], { uid: true });
+      }
+    } finally { lock.release(); }
+    return { message: add ? "Label added" : "Label removed" };
+  });
+
+  // ==========================================
+  // SCHEDULE SEND
+  // ==========================================
+
+  app.post("/schedule", async (request, reply) => {
+    const session = await getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const body = z.object({
+      to: z.string().min(1), subject: z.string().default(""), text: z.string().default(""),
+      html: z.string().optional(), cc: z.string().optional(), bcc: z.string().optional(),
+      attachments: z.any().optional(),
+      scheduledAt: z.string().datetime(),
+    }).parse(request.body);
+
+    const { db } = await import("../../db/index.js");
+    const { scheduledEmails } = await import("../../db/schema.js");
+
+    await db.insert(scheduledEmails).values({
+      senderEmail: session.email, toAddresses: body.to, ccAddresses: body.cc || null,
+      bccAddresses: body.bcc || null, subject: body.subject, textBody: body.text,
+      htmlBody: body.html || null,
+      attachmentsJson: body.attachments ? JSON.stringify(body.attachments) : null,
+      scheduledAt: new Date(body.scheduledAt),
+    });
+
+    return { message: `Email scheduled for ${new Date(body.scheduledAt).toLocaleString()}` };
+  });
+
+  // GET /api/webmail/scheduled — list scheduled emails
+  app.get("/scheduled", async (request, reply) => {
+    const session = await getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const { db } = await import("../../db/index.js");
+    const { scheduledEmails } = await import("../../db/schema.js");
+    const { eq, desc } = await import("drizzle-orm");
+
+    return db.select({ id: scheduledEmails.id, to: scheduledEmails.toAddresses, subject: scheduledEmails.subject, scheduledAt: scheduledEmails.scheduledAt, status: scheduledEmails.status })
+      .from(scheduledEmails).where(eq(scheduledEmails.senderEmail, session.email)).orderBy(desc(scheduledEmails.scheduledAt)).limit(20);
+  });
+
+  // DELETE /api/webmail/scheduled/:id — cancel scheduled email
+  app.delete<{ Params: { id: string } }>("/scheduled/:id", async (request, reply) => {
+    const session = await getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+
+    const { db } = await import("../../db/index.js");
+    const { scheduledEmails } = await import("../../db/schema.js");
+    const { eq, and } = await import("drizzle-orm");
+
+    await db.update(scheduledEmails).set({ status: "cancelled" })
+      .where(and(eq(scheduledEmails.id, request.params.id), eq(scheduledEmails.senderEmail, session.email)));
+    return { message: "Scheduled email cancelled" };
+  });
+
+  // ==========================================
   // CHANGE PASSWORD
   // ==========================================
 

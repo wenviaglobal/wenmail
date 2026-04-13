@@ -44,6 +44,8 @@ export const admins = pgTable("admins", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   role: varchar("role", { length: 20 }).default("admin"),
+  totpSecret: varchar("totp_secret", { length: 255 }),
+  totpEnabled: boolean("totp_enabled").default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -91,6 +93,8 @@ export const clientUsers = pgTable("client_users", {
   name: varchar("name", { length: 255 }).notNull(),
   role: varchar("role", { length: 20 }).default("owner"), // 'owner', 'manager'
   status: varchar("status", { length: 20 }).default("active"),
+  totpSecret: varchar("totp_secret", { length: 255 }),
+  totpEnabled: boolean("totp_enabled").default(false),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -322,6 +326,45 @@ export const blocklist = pgTable("blocklist", {
 // ============================================
 // AUTO-RESPONDERS (vacation reply)
 // ============================================
+
+// ============================================
+// SCHEDULED EMAILS
+// ============================================
+
+// ============================================
+// EMAIL FILTER RULES (server-side Sieve)
+// ============================================
+
+export const filterRules = pgTable("filter_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  mailboxId: uuid("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 100 }).notNull(),
+  condition: varchar("condition", { length: 20 }).notNull(),
+  matchType: varchar("match_type", { length: 20 }).notNull(),
+  matchValue: varchar("match_value", { length: 255 }).notNull(),
+  action: varchar("action", { length: 20 }).notNull(),
+  actionValue: varchar("action_value", { length: 255 }),
+  enabled: boolean("enabled").default(true),
+  priority: integer("priority").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const scheduledEmails = pgTable("scheduled_emails", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  senderEmail: varchar("sender_email", { length: 255 }).notNull(),
+  toAddresses: text("to_addresses").notNull(),
+  ccAddresses: text("cc_addresses"),
+  bccAddresses: text("bcc_addresses"),
+  subject: varchar("subject", { length: 500 }),
+  textBody: text("text_body"),
+  htmlBody: text("html_body"),
+  attachmentsJson: text("attachments_json"), // JSON array of {filename, content, contentType}
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending"), // pending, sent, failed, cancelled
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
 
 export const autoResponders = pgTable("auto_responders", {
   id: uuid("id").primaryKey().defaultRandom(),
