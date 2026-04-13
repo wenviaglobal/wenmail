@@ -9,6 +9,7 @@ let _quotaSyncQueue: Queue | null = null;
 let _logCleanupQueue: Queue | null = null;
 let _domainSetupQueue: Queue | null = null;
 let _dkimRotationQueue: Queue | null = null;
+let _mailLogQueue: Queue | null = null;
 
 function createQueue(name: string): Queue | null {
   try {
@@ -29,6 +30,7 @@ export function initQueues() {
   _logCleanupQueue = createQueue("log-cleanup");
   _domainSetupQueue = createQueue("domain-setup");
   _dkimRotationQueue = createQueue("dkim-rotation");
+  _mailLogQueue = createQueue("mail-log-sync");
 }
 
 export function getDnsCheckQueue() { return _dnsCheckQueue; }
@@ -36,3 +38,4 @@ export function getQuotaSyncQueue() { return _quotaSyncQueue; }
 export function getLogCleanupQueue() { return _logCleanupQueue; }
 export function getDomainSetupQueue() { return _domainSetupQueue; }
 export function getDkimRotationQueue() { return _dkimRotationQueue; }
+export function getMailLogQueue() { return _mailLogQueue; }

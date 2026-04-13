@@ -405,9 +405,32 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const [attachments, setAttachments] = useState<{ filename: string; content: string; contentType: string; size: number }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const dragCounter = useRef(0);
   const totalAttachmentSize = attachments.reduce((sum, a) => sum + a.size, 0);
 
   const isDraft = !!compose.draftUid;
+
+  // Drag and drop handlers
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items?.length) setDragging(true);
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setDragging(false);
+  }
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault(); e.stopPropagation();
+  }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault(); e.stopPropagation();
+    setDragging(false);
+    dragCounter.current = 0;
+    if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+  }
 
   const prefillTo = () => {
     if (!original) return "";
@@ -521,7 +544,23 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
 
   return (
     <div className={`fixed z-50 ${minimized ? "bottom-0 right-4 w-80" : "inset-0 bg-black/50 flex items-end md:items-center justify-center"}`}>
-      <div className={`bg-white dark:bg-slate-800 shadow-2xl flex flex-col transition-all ${minimized ? "rounded-t-xl h-12 border border-gray-200 dark:border-slate-700" : "w-full md:w-[680px] md:rounded-xl max-h-[90vh] md:max-h-[80vh]"}`}>
+      <div
+        className={`bg-white dark:bg-slate-800 shadow-2xl flex flex-col transition-all relative ${minimized ? "rounded-t-xl h-12 border border-gray-200 dark:border-slate-700" : "w-full md:w-[680px] md:rounded-xl max-h-[90vh] md:max-h-[80vh]"}`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {/* Drag overlay */}
+        {dragging && !minimized && (
+          <div className="absolute inset-0 bg-indigo-500/10 dark:bg-indigo-500/20 border-2 border-dashed border-indigo-500 rounded-xl z-50 flex items-center justify-center">
+            <div className="text-center">
+              <Paperclip size={32} className="text-indigo-500 mx-auto mb-2" />
+              <p className="text-indigo-700 dark:text-indigo-300 font-semibold">Drop files to attach</p>
+              <p className="text-indigo-500 text-xs mt-1">Max 25 MB per file</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700 shrink-0 cursor-pointer" onClick={() => minimized && setMinimized(false)}>
           <h3 className="font-semibold dark:text-white text-sm truncate">
             {isDraft ? "Edit Draft" : mode === "new" ? "New Message" : mode === "reply" ? "Reply" : mode === "replyAll" ? "Reply All" : "Forward"}
