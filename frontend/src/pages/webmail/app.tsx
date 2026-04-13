@@ -577,8 +577,8 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
             {minimized && to.length > 0 && <span className="text-gray-400 font-normal ml-2">— {to[0]}</span>}
           </h3>
           <div className="flex items-center gap-0.5">
-            <button type="button" onClick={(e) => { e.stopPropagation(); setWindowState("minimized"); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition" title="Minimize">
-              <Minus size={14} />
+            <button type="button" onClick={(e) => { e.stopPropagation(); setWindowState(minimized ? "default" : "minimized"); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition" title={minimized ? "Restore" : "Minimize"}>
+              {minimized ? <ChevronUp size={14} /> : <Minus size={14} />}
             </button>
             <button type="button" onClick={(e) => { e.stopPropagation(); setWindowState(expanded ? "default" : "expanded"); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition" title={expanded ? "Restore" : "Full screen"}>
               {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
