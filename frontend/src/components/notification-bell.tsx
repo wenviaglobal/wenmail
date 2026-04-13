@@ -154,30 +154,38 @@ export function NotificationBell({ apiPrefix, queryKey }: NotificationBellProps)
                 return (
                   <div
                     key={notif.id}
-                    className={`flex gap-3 px-4 py-3 border-b border-gray-50 dark:border-slate-700/50 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition ${!notif.read ? "bg-indigo-50/50 dark:bg-indigo-900/10" : ""}`}
-                    onClick={() => handleAction(notif)}
+                    className={`px-4 py-3 border-b border-gray-50 dark:border-slate-700/50 transition ${!notif.read ? "bg-indigo-50/50 dark:bg-indigo-900/10" : ""}`}
                   >
-                    <div className="shrink-0 mt-0.5 relative">
-                      <Icon size={16} className="text-gray-400 dark:text-slate-500" />
-                      {!notif.read && <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${dotColor}`} />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm truncate ${!notif.read ? "font-semibold dark:text-white" : "text-gray-600 dark:text-slate-400"}`}>{notif.title}</p>
-                      {notif.message && <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">{notif.message}</p>}
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-gray-400 dark:text-slate-500">{formatTime(notif.createdAt)}</span>
-                        {notif.actionLabel && (
-                          <span className="text-xs text-indigo-600 dark:text-indigo-400">{notif.actionLabel} →</span>
-                        )}
+                    <div className="flex gap-3">
+                      <div className="shrink-0 mt-0.5 relative">
+                        <Icon size={16} className="text-gray-400 dark:text-slate-500" />
+                        {!notif.read && <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${dotColor}`} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm ${!notif.read ? "font-semibold dark:text-white" : "text-gray-600 dark:text-slate-400"}`}>{notif.title}</p>
+                        {notif.message && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{notif.message}</p>}
+                        <span className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 block">{formatTime(notif.createdAt)}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); dismiss(notif.id); }}
-                      className="shrink-0 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 p-1 mt-0.5"
-                      title="Dismiss"
-                    >
-                      <X size={12} />
-                    </button>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 mt-2 ml-7">
+                      {notif.actionUrl && (
+                        <button onClick={() => handleAction(notif)}
+                          className="text-xs bg-indigo-600 text-white px-2.5 py-1 rounded-md hover:bg-indigo-700 transition flex items-center gap-1">
+                          {notif.actionLabel || "View"} →
+                        </button>
+                      )}
+                      {!notif.read && (
+                        <button onClick={() => markRead(notif.id)}
+                          className="text-xs text-gray-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition">
+                          <Check size={10} /> Mark read
+                        </button>
+                      )}
+                      <button onClick={() => dismiss(notif.id)}
+                        className="text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition ml-auto">
+                        <X size={10} /> Dismiss
+                      </button>
+                    </div>
                   </div>
                 );
               })

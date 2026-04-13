@@ -550,6 +550,17 @@ export async function portalRoutes(app: FastifyInstance) {
     return { message: "Password reset completed" };
   });
 
+  // DELETE /api/client-portal/password-resets/:id — dismiss/reject a reset request
+  app.delete<{ Params: { id: string } }>("/password-resets/:id", async (request) => {
+    const clientId = getClientId(request);
+    const { passwordResetRequests } = await import("../../db/schema.js");
+    await db.update(passwordResetRequests).set({
+      status: "rejected",
+      resolvedAt: new Date(),
+    }).where(and(eq(passwordResetRequests.id, request.params.id), eq(passwordResetRequests.clientId, clientId)));
+    return { message: "Reset request dismissed" };
+  });
+
   // GET /api/client-portal/migration/info
   // GET /api/client-portal/mail-settings — IMAP/SMTP/webmail info for client setup instructions
   app.get("/mail-settings", async () => {
