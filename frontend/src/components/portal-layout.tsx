@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Outlet, NavLink } from "react-router";
-import { LayoutDashboard, BookOpen, Globe, Mail, ArrowRightLeft, ScrollText, CreditCard, Import, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, BookOpen, Globe, Mail, ArrowRightLeft, ScrollText, CreditCard, Import, LogOut, Menu, X, Users } from "lucide-react";
 import { cn } from "../lib/utils";
 import { portalLogout } from "../api/portal";
 import { usePortalAuth } from "../hooks/use-portal-auth";
@@ -17,6 +17,7 @@ const navItems = [
   { to: "/portal/logs", icon: ScrollText, label: "Mail Logs" },
   { to: "/portal/billing", icon: CreditCard, label: "Billing" },
   { to: "/portal/migration", icon: Import, label: "Import / Export" },
+  { to: "/portal/users", icon: Users, label: "Team Members" },
 ];
 
 export function PortalLayout() {

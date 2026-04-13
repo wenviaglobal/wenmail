@@ -37,6 +37,7 @@ import { PortalBillingPage } from "./pages/portal/billing";
 import { PortalMigrationPage } from "./pages/portal/migration";
 import { PortalDnsSetupPage } from "./pages/portal/dns-setup";
 import { PortalGettingStartedPage } from "./pages/portal/getting-started";
+import { PortalUsersPage } from "./pages/portal/users";
 
 // Webmail pages
 import { WebmailLoginPage } from "./pages/webmail/login";
@@ -119,6 +120,7 @@ export function App() {
           <Route path="logs" element={<PortalLogsPage />} />
           <Route path="billing" element={<PortalBillingPage />} />
           <Route path="migration" element={<PortalMigrationPage />} />
+          <Route path="users" element={<PortalUsersPage />} />
         </Route>
         {/* ============================== */}
         {/* Webmail routes (/mail) */}

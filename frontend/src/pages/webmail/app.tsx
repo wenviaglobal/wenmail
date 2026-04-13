@@ -5,7 +5,7 @@ import {
   Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
   Forward, Paperclip, Download, CheckSquare, Square, StarOff,
   MailOpen, MailCheck, Settings, Save, Eye, EyeOff, ChevronDown, ChevronUp,
-  Minus, Maximize2, Minimize2, Printer, Users,
+  Minus, Maximize2, Minimize2, Printer, Users, FileText, CalendarClock, Tag,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 import { EmailChips } from "../../components/email-chips";
@@ -375,6 +375,18 @@ export function WebmailApp() {
                     <div className="w-px h-4 bg-gray-200 dark:bg-slate-600 mx-1" />
                     <button onClick={() => handleDelete([selectedMsg.uid])} className="p-1.5 text-gray-400 hover:text-red-500 rounded" title={isTrashOrJunk ? "Delete Forever" : "Delete"}><Trash2 size={16} /></button>
                     <button onClick={() => moveMessages([selectedMsg.uid], currentFolder === "Archive" ? "INBOX" : "Archive")} className="p-1.5 text-gray-400 hover:text-blue-500 rounded" title={currentFolder === "Archive" ? "Unarchive" : "Archive"}><Archive size={16} /></button>
+                    <div className="relative group/label">
+                      <button className="p-1.5 text-gray-400 hover:text-purple-500 rounded" title="Label"><Tag size={16} /></button>
+                      <div className="hidden group-hover/label:block absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl z-50 py-1 min-w-[140px]">
+                        {["Important", "Work", "Personal", "Urgent", "Follow-up"].map(label => (
+                          <button key={label} onClick={() => api("/label", { method: "POST", body: JSON.stringify({ uids: [selectedMsg.uid], folder: currentFolder, label, add: true }) }).then(() => loadMessages(currentFolder, page))}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${label === "Important" ? "bg-red-500" : label === "Work" ? "bg-blue-500" : label === "Personal" ? "bg-green-500" : label === "Urgent" ? "bg-orange-500" : "bg-purple-500"}`} />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <button onClick={() => { const w = window.open("", "_blank"); if (w) { w.document.write(`<html><head><title>${selectedMsg.subject}</title><style>body{font-family:sans-serif;max-width:800px;margin:40px auto;padding:20px}h1{font-size:20px}pre{white-space:pre-wrap}.meta{color:#666;font-size:14px;margin-bottom:20px}</style></head><body><h1>${selectedMsg.subject}</h1><div class="meta"><strong>From:</strong> ${selectedMsg.from?.address}<br><strong>To:</strong> ${selectedMsg.to.map(t=>t.address).join(", ")}<br><strong>Date:</strong> ${selectedMsg.date ? new Date(selectedMsg.date).toLocaleString() : ""}</div>${selectedMsg.contentType === "html" && selectedMsg.html ? selectedMsg.html : `<pre>${selectedMsg.text}</pre>`}</body></html>`); w.document.close(); w.print(); } }} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Print"><Printer size={16} /></button>
                     <button onClick={() => flagMessages([selectedMsg.uid], "\\Flagged", !selectedMsg.flagged)} className={`p-1.5 rounded ${selectedMsg.flagged ? "text-yellow-500" : "text-gray-400 hover:text-yellow-500"}`} title="Star"><Star size={16} /></button>
                   </div>
@@ -665,6 +677,10 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [templates, setTemplates] = useState<any[]>([]);
 
   async function handleSaveDraft() {
     setSavingDraft(true); setError("");
@@ -840,6 +856,48 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
           )}
           {error && <div className="px-4 py-2 text-red-500 text-sm shrink-0">{error}</div>}
 
+          {/* Template picker */}
+          {showTemplates && templates.length > 0 && (
+            <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-700 shrink-0 max-h-40 overflow-y-auto bg-gray-50 dark:bg-slate-800/50">
+              <p className="text-xs text-gray-500 mb-2 font-medium">Choose a template:</p>
+              <div className="grid grid-cols-2 gap-1">
+                {templates.map((t: any) => (
+                  <button key={t.id} type="button" onClick={() => {
+                    setSubject(t.subject); setText(t.text); setHtml(t.html); setShowTemplates(false);
+                  }} className="text-left px-2 py-1.5 text-xs bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded hover:border-indigo-400 transition">
+                    <span className="font-medium">{t.name}</span>
+                    <span className="text-gray-400 ml-1">({t.category})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Schedule picker */}
+          {showSchedule && (
+            <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-700 shrink-0 bg-gray-50 dark:bg-slate-800/50 flex items-center gap-2">
+              <CalendarClock size={14} className="text-green-500 shrink-0" />
+              <input type="datetime-local" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
+                className="px-2 py-1 border border-gray-300 dark:border-slate-600 rounded text-sm dark:bg-slate-700 dark:text-white" />
+              <button type="button" disabled={!scheduleDate || to.length === 0} onClick={async () => {
+                setSending(true); setError("");
+                try {
+                  await api("/schedule", { method: "POST", body: JSON.stringify({
+                    to: to.join(", "), subject, text, html: html || undefined,
+                    cc: cc.length > 0 ? cc.join(", ") : undefined,
+                    scheduledAt: new Date(scheduleDate).toISOString(),
+                    attachments: attachments.length > 0 ? attachments : undefined,
+                  })});
+                  onSent();
+                } catch { setError("Failed to schedule"); }
+                setSending(false);
+              }} className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 disabled:opacity-50">
+                Schedule
+              </button>
+              <button type="button" onClick={() => setShowSchedule(false)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
+            </div>
+          )}
+
           {/* Footer — always visible at bottom */}
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-slate-700 shrink-0">
             <div className="flex items-center gap-2">
@@ -854,6 +912,16 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
               <button type="button" onClick={handleSaveDraft} disabled={savingDraft}
                 className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded flex items-center gap-1 text-sm" title="Save as Draft">
                 <Save size={16} /> {savingDraft ? "Saving..." : "Draft"}
+              </button>
+              <button type="button" onClick={async () => {
+                if (templates.length === 0) { try { setTemplates(await api("/templates")); } catch {} }
+                setShowTemplates(!showTemplates);
+              }} className="p-2 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 rounded" title="Email Templates">
+                <FileText size={16} />
+              </button>
+              <button type="button" onClick={() => setShowSchedule(!showSchedule)}
+                className="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400 rounded" title="Schedule Send">
+                <CalendarClock size={16} />
               </button>
             </div>
             <button type="button" onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Discard</button>

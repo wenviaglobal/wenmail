@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { Plus, RefreshCw, BookOpen } from "lucide-react";
+import { Plus, RefreshCw, BookOpen, MailPlus } from "lucide-react";
 import { portalApi } from "../../api/portal";
 import { type Domain, type DnsCheckResult } from "../../api/domains";
 import { DataTable } from "../../components/data-table";
@@ -64,6 +64,15 @@ export function PortalDomainsPage() {
             className="text-xs text-indigo-600 hover:underline flex items-center gap-1 disabled:opacity-50">
             <RefreshCw size={12} className={verifyMutation.isPending && verifyMutation.variables === d.id ? "animate-spin" : ""} />
             {verifyMutation.isPending && verifyMutation.variables === d.id ? "Verifying..." : "Verify"}
+          </button>
+          <button onClick={async () => {
+            const forwardTo = prompt("Catch-all: Forward unmatched emails to (email address):");
+            if (forwardTo) {
+              await portalApi.put(`catch-all/${d.id}`, { json: { enabled: true, forwardTo } }).json();
+              alert("Catch-all enabled!");
+            }
+          }} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
+            <MailPlus size={12} /> Catch-all
           </button>
         </div>
       ),

@@ -164,6 +164,38 @@ export function AbusePage() {
           </div>
         </div>
       ) : null}
+
+      {/* Abnormal Recipients */}
+      <AbnormalRecipients />
+    </div>
+  );
+}
+
+function AbnormalRecipients() {
+  const { data } = useQuery({
+    queryKey: ["abnormal-recipients"],
+    queryFn: () => api.get("admin/abuse/abnormal-recipients").json<any[]>(),
+  });
+
+  if (!data?.length) return null;
+
+  return (
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-5 mt-6">
+      <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <AlertTriangle size={18} className="text-red-500" /> Abnormal Recipients (High Bounce Rate)
+      </h2>
+      <p className="text-xs text-gray-400 mb-3">External addresses that frequently bounce — consider blocking or alerting senders</p>
+      <div className="space-y-2">
+        {data.map((r: any, i: number) => (
+          <div key={i} className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-900/10 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">{r.toAddress}</p>
+              <p className="text-xs text-gray-400">{r.total} sent, {r.bounced} bounced</p>
+            </div>
+            <span className={`text-sm font-bold ${r.bounceRate > 50 ? "text-red-600" : "text-amber-600"}`}>{r.bounceRate}% bounce</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
