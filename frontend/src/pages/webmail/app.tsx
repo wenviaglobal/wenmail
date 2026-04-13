@@ -332,7 +332,15 @@ export function WebmailApp() {
                   <div className="flex gap-2 flex-wrap">
                     {selectedMsg.attachments.map(att => {
                       const doDownload = () => downloadAttachment(selectedMsg.uid, att.id, currentFolder, att.filename);
-                      if (att.isImage && att.preview) {
+                      const ct = att.contentType?.toLowerCase() || "";
+                      const isImage = att.isImage && att.preview;
+                      const isVideo = ct.startsWith("video/");
+                      const isPdf = ct === "application/pdf";
+                      const isAudio = ct.startsWith("audio/");
+                      const isText = ct.startsWith("text/") && !ct.includes("html");
+
+                      // Image preview
+                      if (isImage) {
                         return (
                           <div key={att.id} className="relative group cursor-pointer" onClick={doDownload}>
                             <img src={att.preview} alt={att.filename}
@@ -345,6 +353,23 @@ export function WebmailApp() {
                           </div>
                         );
                       }
+
+                      // Video preview
+                      if (isVideo) {
+                        return <AttachmentMediaPreview key={att.id} att={att} uid={selectedMsg.uid} folder={currentFolder} type="video" onDownload={doDownload} />;
+                      }
+
+                      // Audio preview
+                      if (isAudio) {
+                        return <AttachmentMediaPreview key={att.id} att={att} uid={selectedMsg.uid} folder={currentFolder} type="audio" onDownload={doDownload} />;
+                      }
+
+                      // PDF preview
+                      if (isPdf) {
+                        return <AttachmentMediaPreview key={att.id} att={att} uid={selectedMsg.uid} folder={currentFolder} type="pdf" onDownload={doDownload} />;
+                      }
+
+                      // Default download button
                       return (
                         <button key={att.id} onClick={doDownload}
                           className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600">
@@ -396,6 +421,90 @@ export function WebmailApp() {
 // ==========================================
 // COMPOSE MODAL
 // ==========================================
+
+// ==========================================
+// ATTACHMENT MEDIA PREVIEW (video, audio, pdf)
+// ==========================================
+
+function AttachmentMediaPreview({ att, uid, folder, type, onDownload }: {
+  att: Attachment; uid: number; folder: string; type: "video" | "audio" | "pdf"; onDownload: () => void;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function loadPreview() {
+    if (blobUrl) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/message/${uid}/attachment/${att.id}?folder=${encodeURIComponent(folder)}`, { headers: headers() });
+      const blob = await res.blob();
+      setBlobUrl(URL.createObjectURL(blob));
+    } catch {}
+    setLoading(false);
+  }
+
+  // Auto-load for audio (small), manual for video/pdf (large)
+  useEffect(() => { if (type === "audio") loadPreview(); }, []);
+
+  if (type === "video") {
+    return (
+      <div className="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden bg-black max-w-sm">
+        {blobUrl ? (
+          <video src={blobUrl} controls className="max-h-48 max-w-full" />
+        ) : (
+          <button onClick={loadPreview} className="flex flex-col items-center justify-center w-64 h-36 bg-gray-900 hover:bg-gray-800 transition text-white">
+            {loading ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Mail size={24} className="mb-2 opacity-50" />}
+            <span className="text-xs mt-1">{loading ? "Loading..." : "Click to preview video"}</span>
+            <span className="text-xs text-gray-400 mt-0.5">{att.filename} ({formatSize(att.size)})</span>
+          </button>
+        )}
+        <div className="flex items-center justify-between px-2 py-1 bg-gray-900">
+          <span className="text-xs text-gray-400 truncate">{att.filename}</span>
+          <button onClick={onDownload} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"><Download size={10} /> Save</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "audio") {
+    return (
+      <div className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 p-3 min-w-[250px]">
+        <p className="text-xs font-medium dark:text-white mb-2 truncate">{att.filename}</p>
+        {blobUrl ? (
+          <audio src={blobUrl} controls className="w-full h-8" />
+        ) : (
+          <div className="text-xs text-gray-400">Loading...</div>
+        )}
+        <div className="flex justify-between mt-1">
+          <span className="text-xs text-gray-400">{formatSize(att.size)}</span>
+          <button onClick={onDownload} className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-1"><Download size={10} /> Save</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "pdf") {
+    return (
+      <div className="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden max-w-sm">
+        {blobUrl ? (
+          <iframe src={blobUrl} className="w-80 h-48 bg-white" title={att.filename} />
+        ) : (
+          <button onClick={loadPreview} className="flex flex-col items-center justify-center w-64 h-36 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 transition">
+            {loading ? <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /> : <span className="text-2xl mb-1">📄</span>}
+            <span className="text-xs text-gray-600 dark:text-slate-300 mt-1">{loading ? "Loading..." : "Click to preview PDF"}</span>
+            <span className="text-xs text-gray-400 mt-0.5">{att.filename} ({formatSize(att.size)})</span>
+          </button>
+        )}
+        <div className="flex items-center justify-between px-2 py-1 bg-gray-100 dark:bg-slate-800">
+          <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{att.filename}</span>
+          <button onClick={onDownload} className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-1"><Download size={10} /> Save</button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 interface ComposeProps {
   email: string;
