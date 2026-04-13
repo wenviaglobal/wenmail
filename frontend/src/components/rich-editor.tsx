@@ -7,7 +7,7 @@ import {
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   Link as LinkIcon, Quote, Undo2, Redo2, RemoveFormatting,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useState, useCallback } from "react";
 
 interface RichEditorProps {
   content: string;
@@ -29,6 +29,9 @@ function ToolbarButton({ onClick, active, title, children }: { onClick: () => vo
 }
 
 export function RichEditor({ content, onChange, placeholder = "Write your message..." }: RichEditorProps) {
+  const [, forceRender] = useState(0);
+  const rerender = useCallback(() => forceRender(n => n + 1), []);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -46,6 +49,9 @@ export function RichEditor({ content, onChange, placeholder = "Write your messag
     content: content ? `<p>${content.replace(/\n/g, "<br>")}</p>` : "",
     onUpdate: ({ editor: e }) => {
       onChange(e.getText(), e.getHTML());
+    },
+    onTransaction: () => {
+      rerender(); // Force toolbar re-render on every state change (instant active indicators)
     },
     editorProps: {
       attributes: {

@@ -227,7 +227,10 @@ export function WebmailApp() {
             <button onClick={() => moveMessages([...selected], currentFolder === "Archive" ? "INBOX" : "Archive")} className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"><Archive size={12} /> {currentFolder === "Archive" ? "Unarchive" : "Archive"}</button>
             <button onClick={() => flagMessages([...selected], "\\Seen", true)} className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-xs"><MailCheck size={12} /> Read</button>
             <button onClick={() => flagMessages([...selected], "\\Seen", false)} className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-xs"><MailOpen size={12} /> Unread</button>
-            <button onClick={() => flagMessages([...selected], "\\Flagged", true)} className="text-yellow-600 hover:text-yellow-800 flex items-center gap-1 text-xs"><Star size={12} /> Star</button>
+            {displayMessages.filter(m => selected.has(m.uid)).every(m => m.flagged)
+              ? <button onClick={() => flagMessages([...selected], "\\Flagged", false)} className="text-yellow-600 hover:text-yellow-800 flex items-center gap-1 text-xs"><StarOff size={12} /> Unstar</button>
+              : <button onClick={() => flagMessages([...selected], "\\Flagged", true)} className="text-yellow-600 hover:text-yellow-800 flex items-center gap-1 text-xs"><Star size={12} /> Star</button>
+            }
             <button onClick={() => setSelected(new Set())} className="ml-auto text-gray-500 text-xs">Clear</button>
           </div>
         )}
