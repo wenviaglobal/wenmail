@@ -561,6 +561,42 @@ export async function portalRoutes(app: FastifyInstance) {
     return { message: "Reset request dismissed" };
   });
 
+  // ==========================================
+  // PORTAL USER MANAGEMENT (client self-service)
+  // ==========================================
+
+  // GET /api/client-portal/users — list portal users for this client
+  app.get("/users", async (request) => {
+    const clientId = getClientId(request);
+    return db.select({
+      id: clientUsers.id, email: clientUsers.email, name: clientUsers.name,
+      role: clientUsers.role, status: clientUsers.status, lastLoginAt: clientUsers.lastLoginAt,
+    }).from(clientUsers).where(eq(clientUsers.clientId, clientId));
+  });
+
+  // POST /api/client-portal/users — create portal user (owner only)
+  app.post("/users", async (request) => {
+    const user = request.user as { id: string; clientId: string; role: string };
+    if (user.role !== "owner") throw new AppError(403, "Only owners can create portal users", "FORBIDDEN");
+
+    const body = z.object({
+      email: z.string().email(),
+      name: z.string().min(1).max(255),
+      password: z.string().min(8),
+      role: z.enum(["owner", "manager"]).default("manager"),
+    }).parse(request.body);
+
+    const { hashPassword } = await import("../../lib/password.js");
+    const hash = await hashPassword(body.password);
+
+    const [newUser] = await db.insert(clientUsers).values({
+      clientId: user.clientId, email: body.email.toLowerCase(), name: body.name,
+      passwordHash: hash, role: body.role,
+    }).returning();
+
+    return { id: newUser.id, email: newUser.email, name: newUser.name, role: newUser.role };
+  });
+
   // GET /api/client-portal/migration/info
   // GET /api/client-portal/mail-settings — IMAP/SMTP/webmail info for client setup instructions
   app.get("/mail-settings", async () => {

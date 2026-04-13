@@ -5,7 +5,7 @@ import {
   Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
   Forward, Paperclip, Download, CheckSquare, Square, StarOff,
   MailOpen, MailCheck, Settings, Save, Eye, EyeOff, ChevronDown, ChevronUp,
-  Minus, Maximize2, Minimize2,
+  Minus, Maximize2, Minimize2, Printer,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 import { EmailChips } from "../../components/email-chips";
@@ -92,6 +92,23 @@ export function WebmailApp() {
     if (!localStorage.getItem("webmailToken")) { navigate("/mail/login"); return; }
     loadFolders(); loadMessages("INBOX");
   }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as any)?.contentEditable === "true") return;
+      if (e.key === "c" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setCompose({ mode: "new" }); }
+      if (e.key === "r" && !e.ctrlKey && !e.metaKey && selectedMsg) { e.preventDefault(); startReply(selectedMsg, "reply"); }
+      if (e.key === "a" && !e.ctrlKey && !e.metaKey && selectedMsg) { e.preventDefault(); startReply(selectedMsg, "replyAll"); }
+      if (e.key === "f" && !e.ctrlKey && !e.metaKey && selectedMsg) { e.preventDefault(); startReply(selectedMsg, "forward"); }
+      if (e.key === "Escape") { if (selectedMsg) setSelectedMsg(null); }
+      if (e.key === "/" && !e.ctrlKey) { e.preventDefault(); document.querySelector<HTMLInputElement>("[placeholder='Search...']")?.focus(); }
+      if (e.key === "Delete" && selectedMsg) { handleDelete([selectedMsg.uid]); }
+      if (e.key === "e" && selectedMsg) { moveMessages([selectedMsg.uid], currentFolder === "Archive" ? "INBOX" : "Archive"); }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [selectedMsg, currentFolder]);
 
   async function openMessage(uid: number) {
     setLoading(true);
@@ -318,6 +335,7 @@ export function WebmailApp() {
                     <div className="w-px h-4 bg-gray-200 dark:bg-slate-600 mx-1" />
                     <button onClick={() => handleDelete([selectedMsg.uid])} className="p-1.5 text-gray-400 hover:text-red-500 rounded" title={isTrashOrJunk ? "Delete Forever" : "Delete"}><Trash2 size={16} /></button>
                     <button onClick={() => moveMessages([selectedMsg.uid], currentFolder === "Archive" ? "INBOX" : "Archive")} className="p-1.5 text-gray-400 hover:text-blue-500 rounded" title={currentFolder === "Archive" ? "Unarchive" : "Archive"}><Archive size={16} /></button>
+                    <button onClick={() => { const w = window.open("", "_blank"); if (w) { w.document.write(`<html><head><title>${selectedMsg.subject}</title><style>body{font-family:sans-serif;max-width:800px;margin:40px auto;padding:20px}h1{font-size:20px}pre{white-space:pre-wrap}.meta{color:#666;font-size:14px;margin-bottom:20px}</style></head><body><h1>${selectedMsg.subject}</h1><div class="meta"><strong>From:</strong> ${selectedMsg.from?.address}<br><strong>To:</strong> ${selectedMsg.to.map(t=>t.address).join(", ")}<br><strong>Date:</strong> ${selectedMsg.date ? new Date(selectedMsg.date).toLocaleString() : ""}</div>${selectedMsg.contentType === "html" && selectedMsg.html ? selectedMsg.html : `<pre>${selectedMsg.text}</pre>`}</body></html>`); w.document.close(); w.print(); } }} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded" title="Print"><Printer size={16} /></button>
                     <button onClick={() => flagMessages([selectedMsg.uid], "\\Flagged", !selectedMsg.flagged)} className={`p-1.5 rounded ${selectedMsg.flagged ? "text-yellow-500" : "text-gray-400 hover:text-yellow-500"}`} title="Star"><Star size={16} /></button>
                   </div>
                 </div>

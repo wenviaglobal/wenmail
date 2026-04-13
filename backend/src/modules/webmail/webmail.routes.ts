@@ -194,6 +194,15 @@ export async function webmailRoutes(app: FastifyInstance) {
     return { message: "If the account exists, a reset request has been submitted." };
   });
 
+  // GET /api/webmail/contacts?q=search — contact autocomplete
+  app.get("/contacts", async (request, reply) => {
+    const session = await getSession(request as any);
+    if (!session) return reply.status(401).send({ message: "Unauthorized" });
+    const { q = "" } = request.query as Record<string, string>;
+    const { searchContacts } = await import("./contacts.js");
+    return searchContacts(session.email, q);
+  });
+
   app.post("/logout", async (request) => {
     const token = getSessionToken(request as any);
     if (token) await destroySession(token);
@@ -384,6 +393,13 @@ export async function webmailRoutes(app: FastifyInstance) {
     }
 
     await transporter.sendMail(mailOptions);
+
+    // Record contacts for autocomplete
+    try {
+      const { recordContact } = await import("./contacts.js");
+      const recipients = [body.to, body.cc, body.bcc].filter(Boolean).join(",").split(",").map(e => e.trim()).filter(Boolean);
+      for (const r of recipients) recordContact(session.email, r);
+    } catch {}
 
     // Save to Sent folder
     try {
