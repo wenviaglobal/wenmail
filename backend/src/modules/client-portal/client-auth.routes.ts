@@ -121,6 +121,14 @@ export async function clientAuthRoutes(app: FastifyInstance) {
         clientId: user.clientId,
         email: user.email,
       });
+      // Notify admin
+      const { notifyAdmin } = await import("../../lib/notify.js");
+      notifyAdmin("password_reset", `Portal password reset: ${user.email}`, {
+        message: `Client user ${user.email} requested a password reset.`,
+        actionUrl: "/admin/password-resets",
+        actionLabel: "Reset Password",
+        severity: "warning",
+      });
     }
 
     return { message: "If an account exists with that email, a reset request has been submitted." };

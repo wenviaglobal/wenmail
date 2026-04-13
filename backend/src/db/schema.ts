@@ -315,6 +315,26 @@ export const blocklist = pgTable("blocklist", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+// ============================================
+// NOTIFICATIONS (centralized notification system)
+// ============================================
+
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  targetType: varchar("target_type", { length: 20 }).notNull(), // admin | client
+  targetId: uuid("target_id"), // admin_id or client_id
+  type: varchar("type", { length: 50 }).notNull(), // password_reset, domain_dns, mailbox_quota, billing_due, abuse_alert, ssl_expiry, queue_growth
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  actionUrl: varchar("action_url", { length: 255 }),
+  actionLabel: varchar("action_label", { length: 50 }),
+  severity: varchar("severity", { length: 20 }).default("info"), // info, warning, critical
+  read: boolean("read").default(false),
+  dismissed: boolean("dismissed").default(false),
+  metadata: jsonb("metadata"), // extra data for the notification
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 export const passwordResetRequests = pgTable("password_reset_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
   requestType: varchar("request_type", { length: 20 }).default("portal"), // portal | mailbox

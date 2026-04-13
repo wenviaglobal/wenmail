@@ -181,6 +181,14 @@ export async function webmailRoutes(app: FastifyInstance) {
         clientId: mailbox.clientId,
         email: email.toLowerCase(),
       });
+      // Notify the client
+      const { notifyClient } = await import("../../lib/notify.js");
+      notifyClient(mailbox.clientId, "password_reset", `Password reset requested: ${email}`, {
+        message: `${email} requested a password reset from the webmail login page.`,
+        actionUrl: "/portal/mailboxes",
+        actionLabel: "Reset Password",
+        severity: "warning",
+      });
     }
 
     return { message: "If the account exists, a reset request has been submitted." };

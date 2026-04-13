@@ -106,6 +106,8 @@ export async function buildApp() {
   await app.register(abuseRoutes, { prefix: "/api/admin/abuse" });
   const { bansRoutes } = await import("./modules/admin/bans.routes.js");
   await app.register(bansRoutes, { prefix: "/api/admin/bans" });
+  const { adminNotificationRoutes } = await import("./modules/notifications/notification.routes.js");
+  await app.register(adminNotificationRoutes, { prefix: "/api/admin/notifications" });
 
   // ==========================================
   // Client Portal routes (JWT with client type)
@@ -114,6 +116,8 @@ export async function buildApp() {
   await app.register(portalRoutes, { prefix: "/api/client-portal" });
   const { importExportRoutes } = await import("./modules/client-portal/import-export.routes.js");
   await app.register(importExportRoutes, { prefix: "/api/client-portal" });
+  const { clientNotificationRoutes } = await import("./modules/notifications/notification.routes.js");
+  await app.register(clientNotificationRoutes, { prefix: "/api/client-portal/notifications" });
 
   // ==========================================
   // Webmail routes (IMAP/SMTP proxy — no JWT, uses own session)

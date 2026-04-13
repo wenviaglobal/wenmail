@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, BookOpen, Globe, Mail, ArrowRightLeft, ScrollText, CreditCard, Import, LogOut, Menu, X, Bell } from "lucide-react";
+import { Outlet, NavLink } from "react-router";
+import { LayoutDashboard, BookOpen, Globe, Mail, ArrowRightLeft, ScrollText, CreditCard, Import, LogOut, Menu, X } from "lucide-react";
 import { cn } from "../lib/utils";
-import { portalApi, portalLogout } from "../api/portal";
+import { portalLogout } from "../api/portal";
 import { usePortalAuth } from "../hooks/use-portal-auth";
 import { ThemeToggle } from "./theme-toggle";
+import { NotificationBell } from "./notification-bell";
 
 const navItems = [
   { to: "/portal", icon: LayoutDashboard, label: "Dashboard" },
@@ -21,14 +21,6 @@ const navItems = [
 export function PortalLayout() {
   const { user } = usePortalAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const navigate = useNavigate();
-
-  const { data: pendingResets } = useQuery({
-    queryKey: ["portal-reset-count"],
-    queryFn: () => portalApi.get("password-resets/pending-count").json<{ count: number }>(),
-    refetchInterval: 30000,
-  });
-  const resetCount = pendingResets?.count ?? 0;
 
   return (
     <div className="flex h-screen">
@@ -96,20 +88,14 @@ export function PortalLayout() {
           </button>
           <h1 className="text-lg font-bold dark:text-white">WenMail</h1>
           <div className="flex items-center gap-1">
-            <button onClick={() => navigate("/portal/mailboxes")} className="relative p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition">
-              <Bell size={18} />
-              {resetCount > 0 && <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{resetCount}</span>}
-            </button>
+            <NotificationBell apiPrefix="client-portal" queryKey="portal-notifs" />
             <ThemeToggle />
           </div>
         </div>
 
         {/* Desktop top bar */}
         <div className="hidden lg:flex items-center justify-end gap-2 px-6 py-2 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          <button onClick={() => navigate("/portal/mailboxes")} className="relative p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition" title="Password reset requests">
-            <Bell size={18} />
-            {resetCount > 0 && <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{resetCount}</span>}
-          </button>
+          <NotificationBell apiPrefix="client-portal" queryKey="portal-notifs" />
           <ThemeToggle />
         </div>
 
