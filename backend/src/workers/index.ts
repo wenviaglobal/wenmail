@@ -25,7 +25,7 @@ export async function startWorkers() {
   }
 
   // Only import BullMQ modules if Redis is new enough
-  const { initQueues, getDnsCheckQueue, getQuotaSyncQueue, getLogCleanupQueue, getDkimRotationQueue, getMailLogQueue } = await import("./queues.js");
+  const { initQueues, getDnsCheckQueue, getQuotaSyncQueue, getLogCleanupQueue, getDkimRotationQueue, getMailLogQueue, getScheduledSendQueue } = await import("./queues.js");
   const { createDnsCheckWorker } = await import("./dns-check.worker.js");
   const { createQuotaSyncWorker } = await import("./quota-sync.worker.js");
   const { createLogCleanupWorker } = await import("./log-cleanup.worker.js");
