@@ -31,12 +31,18 @@ export function PortalAliasesPage() {
     enabled: !!selectedDomain,
   });
 
+  const [createError, setCreateError] = useState("");
+
   const createMutation = useMutation({
     mutationFn: () => portalApi.post(`domains/${selectedDomain}/aliases`, { json: form }).json(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["portal-aliases"] });
       setForm({ sourceLocal: "", destination: "" });
       setShowForm(false);
+      setCreateError("");
+    },
+    onError: async (err: any) => {
+      try { const b = await err?.response?.json(); setCreateError(b?.message || "Failed to create alias"); } catch { setCreateError("Failed to create alias"); }
     },
   });
 
@@ -87,7 +93,8 @@ export function PortalAliasesPage() {
               onChange={(e) => setForm({ ...form, destination: e.target.value })}
               className="px-3 py-2 border border-slate-300 rounded-md text-sm" />
           </div>
-          <button onClick={() => createMutation.mutate()} disabled={!form.sourceLocal || !form.destination || createMutation.isPending}
+          {createError && <div className="text-red-600 text-sm bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">{createError}</div>}
+          <button type="button" onClick={() => { setCreateError(""); createMutation.mutate(); }} disabled={!form.sourceLocal || !form.destination || createMutation.isPending}
             className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">
             {createMutation.isPending ? "Creating..." : "Create Alias"}
           </button>
