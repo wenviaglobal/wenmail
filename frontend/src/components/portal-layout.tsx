@@ -6,6 +6,7 @@ import { portalLogout } from "../api/portal";
 import { usePortalAuth } from "../hooks/use-portal-auth";
 import { ThemeToggle } from "./theme-toggle";
 import { NotificationBell } from "./notification-bell";
+import { LocaleSwitcher } from "./locale-switcher";
 
 const navItems = [
   { to: "/portal", icon: LayoutDashboard, label: "Dashboard" },
@@ -89,6 +90,7 @@ export function PortalLayout() {
           <h1 className="text-lg font-bold dark:text-white">WenMail</h1>
           <div className="flex items-center gap-1">
             <NotificationBell apiPrefix="client-portal" queryKey="portal-notifs" />
+            <LocaleSwitcher />
             <ThemeToggle />
           </div>
         </div>

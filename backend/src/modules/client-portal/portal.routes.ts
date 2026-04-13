@@ -449,16 +449,17 @@ export async function portalRoutes(app: FastifyInstance) {
 
     if (domainIds.length === 0) return { data: [], pagination: { page, limit, total: 0, pages: 0 } };
 
+    const { inArray } = await import("drizzle-orm");
     const [data, total] = await Promise.all([
       db.select().from(mailLogs)
-        .where(sql`${mailLogs.domainId} = ANY(${domainIds})`)
+        .where(inArray(mailLogs.domainId, domainIds))
         .orderBy(desc(mailLogs.createdAt))
         .limit(limit).offset(offset),
       db.select({ count: sql<number>`COUNT(*)` }).from(mailLogs)
-        .where(sql`${mailLogs.domainId} = ANY(${domainIds})`),
+        .where(inArray(mailLogs.domainId, domainIds)),
     ]);
 
-    return { data, pagination: { page, limit, total: total[0].count, pages: Math.ceil(total[0].count / limit) } };
+    return { logs: data, total: total[0].count, pagination: { page, limit, total: total[0].count, pages: Math.ceil(total[0].count / limit) } };
   });
 
   // ==========================================

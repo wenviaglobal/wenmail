@@ -8,6 +8,7 @@ import { cn } from "../lib/utils";
 import { logout } from "../api/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { NotificationBell } from "./notification-bell";
+import { LocaleSwitcher } from "./locale-switcher";
 
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Dashboard", section: "main" },
@@ -94,6 +95,7 @@ export function Layout() {
           <h1 className="text-lg font-bold dark:text-white">WenMail</h1>
           <div className="flex items-center gap-1">
             <NotificationBell apiPrefix="admin" queryKey="admin-notifs" />
+            <LocaleSwitcher />
             <ThemeToggle />
           </div>
         </div>

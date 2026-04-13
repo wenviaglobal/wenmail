@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical, Eye, EyeOff, KeyRound, Power, PowerOff, X, Bell } from "lucide-react";
+import { Plus, Trash2, Copy, CheckCircle, Monitor, Smartphone, Globe, MoreVertical, Eye, EyeOff, KeyRound, Power, PowerOff, X, Bell, Mail as MailIcon, Forward as ForwardIcon, Clock } from "lucide-react";
 import { portalApi } from "../../api/portal";
 import { type Domain } from "../../api/domains";
 import { type Mailbox } from "../../api/mailboxes";
@@ -301,6 +301,8 @@ function MailboxActions({ mailbox: m, onDisable, onReEnable, onDelete, onPasswor
 }) {
   const [open, setOpen] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
+  const [showAutoReply, setShowAutoReply] = useState(false);
+  const [showForwarding, setShowForwarding] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -325,6 +327,14 @@ function MailboxActions({ mailbox: m, onDisable, onReEnable, onDelete, onPasswor
               <button onClick={() => { setOpen(false); setShowPwModal(true); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2.5 transition">
                 <KeyRound size={14} className="text-indigo-500" /> Change Password
+              </button>
+              <button onClick={() => { setOpen(false); setShowAutoReply(true); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2.5 transition">
+                <Clock size={14} className="text-amber-500" /> Auto-reply / Vacation
+              </button>
+              <button onClick={() => { setOpen(false); setShowForwarding(true); }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2.5 transition">
+                <ForwardIcon size={14} className="text-blue-500" /> Forwarding
               </button>
               <button onClick={() => { setOpen(false); if (confirm(`Disable ${m.localPart}@${m.domainName}?`)) onDisable(); }}
                 className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 border-t border-gray-100 dark:border-slate-700 transition">
@@ -353,6 +363,148 @@ function MailboxActions({ mailbox: m, onDisable, onReEnable, onDelete, onPasswor
           onSave={async (pw) => { await onPasswordChange(pw); setShowPwModal(false); }}
         />
       )}
+
+      {showAutoReply && <AutoReplyModal mailboxId={m.id} email={`${m.localPart}@${m.domainName}`} onClose={() => setShowAutoReply(false)} />}
+      {showForwarding && <ForwardingModal mailboxId={m.id} email={`${m.localPart}@${m.domainName}`} onClose={() => setShowForwarding(false)} />}
+    </div>
+  );
+}
+
+// ==========================================
+// AUTO-REPLY MODAL
+// ==========================================
+
+function AutoReplyModal({ mailboxId, email, onClose }: { mailboxId: string; email: string; onClose: () => void }) {
+  const [enabled, setEnabled] = useState(false);
+  const [subject, setSubject] = useState("Out of Office");
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    portalApi.get(`auto-responder/${mailboxId}`).json<any>().then(d => {
+      setEnabled(d.enabled || false);
+      setSubject(d.subject || "Out of Office");
+      setBody(d.body || "");
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    await portalApi.put(`auto-responder/${mailboxId}`, { json: { enabled, subject, body } }).json();
+    setSaving(false);
+    onClose();
+  }
+
+  if (loading) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+          <h3 className="font-semibold dark:text-white flex items-center gap-2"><Clock size={16} className="text-amber-500" /> Auto-reply</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-gray-500 dark:text-slate-400">{email}</p>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="w-4 h-4 rounded" />
+            <span className="text-sm font-medium">Enable auto-reply</span>
+          </label>
+          {enabled && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Subject</label>
+                <input value={subject} onChange={e => setSubject(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Message</label>
+                <textarea value={body} onChange={e => setBody(e.target.value)} rows={5}
+                  placeholder="I am currently out of office..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm" />
+              </div>
+            </>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-slate-700 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm">Cancel</button>
+          <button onClick={save} disabled={saving} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// FORWARDING MODAL
+// ==========================================
+
+function ForwardingModal({ mailboxId, email, onClose }: { mailboxId: string; email: string; onClose: () => void }) {
+  const [rules, setRules] = useState<Array<{ id: string; forwardTo: string; keepCopy: boolean }>>([]);
+  const [newForward, setNewForward] = useState("");
+  const [keepCopy, setKeepCopy] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadRules(); }, []);
+
+  async function loadRules() {
+    try {
+      const data = await portalApi.get(`forwarding/${mailboxId}`).json<any[]>();
+      setRules(data);
+    } catch {}
+    setLoading(false);
+  }
+
+  async function addRule() {
+    if (!newForward.trim()) return;
+    await portalApi.post(`forwarding/${mailboxId}`, { json: { forwardTo: newForward.trim(), keepCopy } }).json();
+    setNewForward("");
+    loadRules();
+  }
+
+  async function removeRule(id: string) {
+    await portalApi.delete(`forwarding/${id}`).json();
+    loadRules();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+          <h3 className="font-semibold dark:text-white flex items-center gap-2"><ForwardIcon size={16} className="text-blue-500" /> Forwarding</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-gray-500 dark:text-slate-400">Forward emails from {email} to other addresses</p>
+
+          {rules.map(r => (
+            <div key={r.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-700 rounded-lg px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">{r.forwardTo}</p>
+                <p className="text-xs text-gray-400">{r.keepCopy ? "Keep copy" : "Forward only"}</p>
+              </div>
+              <button onClick={() => removeRule(r.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+            </div>
+          ))}
+
+          <div className="flex gap-2">
+            <input value={newForward} onChange={e => setNewForward(e.target.value)} placeholder="forward-to@example.com"
+              onKeyDown={e => e.key === "Enter" && addRule()}
+              className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm" />
+            <button onClick={addRule} disabled={!newForward.trim()} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">Add</button>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-slate-400">
+            <input type="checkbox" checked={keepCopy} onChange={e => setKeepCopy(e.target.checked)} /> Keep a copy in this mailbox
+          </label>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-slate-700 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm">Close</button>
+        </div>
+      </div>
     </div>
   );
 }
