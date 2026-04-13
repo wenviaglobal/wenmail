@@ -22,9 +22,9 @@ export function createMailLogWorker() {
         const lastRun = await redis.get("mail-log:last-run") || "0";
         const since = lastRun === "0" ? "5 minutes ago" : new Date(parseInt(lastRun)).toISOString();
 
-        // Parse recent Postfix log entries
+        // Parse recent Postfix log entries from syslog
         const { stdout } = await execAsync(
-          `journalctl -u postfix --since "${since}" --no-pager -o short-iso 2>/dev/null || grep postfix /var/log/syslog 2>/dev/null | tail -500`,
+          `grep "status=" /var/log/syslog 2>/dev/null | tail -200`,
           { timeout: 10000 },
         );
 

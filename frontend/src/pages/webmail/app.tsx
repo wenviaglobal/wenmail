@@ -261,6 +261,7 @@ export function WebmailApp() {
                   className={`mt-1 shrink-0 ${msg.flagged ? "text-yellow-500" : "text-gray-300 hover:text-yellow-500"}`}>
                   {msg.flagged ? <Star size={14} /> : <StarOff size={14} />}
                 </button>
+                <SenderAvatar name={msg.from?.name || msg.from?.address || "?"} />
                 <div className="flex-1 min-w-0" onClick={() => openMessage(msg.uid)}>
                   <div className="flex items-center justify-between mb-0.5">
                     <span className={`text-sm truncate flex-1 ${!msg.seen ? "font-semibold text-gray-900 dark:text-white" : "text-gray-600 dark:text-slate-400"}`}>
@@ -421,6 +422,22 @@ export function WebmailApp() {
 // ==========================================
 // COMPOSE MODAL
 // ==========================================
+
+// ==========================================
+// SENDER AVATAR
+// ==========================================
+
+const avatarColors = ["bg-red-500", "bg-blue-500", "bg-green-500", "bg-purple-500", "bg-amber-500", "bg-pink-500", "bg-teal-500", "bg-indigo-500", "bg-cyan-500", "bg-orange-500"];
+
+function SenderAvatar({ name }: { name: string }) {
+  const initial = (name[0] || "?").toUpperCase();
+  const colorIndex = name.split("").reduce((sum, c) => sum + c.charCodeAt(0), 0) % avatarColors.length;
+  return (
+    <div className={`shrink-0 w-8 h-8 rounded-full ${avatarColors[colorIndex]} flex items-center justify-center text-white text-xs font-bold mt-0.5`}>
+      {initial}
+    </div>
+  );
+}
 
 // ==========================================
 // ATTACHMENT MEDIA PREVIEW (video, audio, pdf)

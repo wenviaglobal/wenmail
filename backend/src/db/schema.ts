@@ -319,6 +319,50 @@ export const blocklist = pgTable("blocklist", {
 // NOTIFICATIONS (centralized notification system)
 // ============================================
 
+// ============================================
+// AUTO-RESPONDERS (vacation reply)
+// ============================================
+
+export const autoResponders = pgTable("auto_responders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  mailboxId: uuid("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").default(false),
+  subject: varchar("subject", { length: 255 }).default("Out of Office"),
+  body: text("body"),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  endDate: timestamp("end_date", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+// ============================================
+// CATCH-ALL CONFIGURATION
+// ============================================
+
+export const catchAllRules = pgTable("catch_all_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  domainId: uuid("domain_id").notNull().references(() => domains.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").default(false),
+  forwardTo: varchar("forward_to", { length: 255 }).notNull(), // email to forward catch-all to
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+// ============================================
+// EMAIL FORWARDING RULES
+// ============================================
+
+export const forwardingRules = pgTable("forwarding_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  mailboxId: uuid("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  forwardTo: varchar("forward_to", { length: 255 }).notNull(),
+  keepCopy: boolean("keep_copy").default(true), // keep a copy in original mailbox
+  enabled: boolean("enabled").default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   targetType: varchar("target_type", { length: 20 }).notNull(), // admin | client

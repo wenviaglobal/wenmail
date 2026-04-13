@@ -50,6 +50,13 @@
       "when": 1776072470967,
       "tag": "0006_magical_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776076818181,
+      "tag": "0007_curious_enchantress",
+      "breakpoints": true
     }
   ]
 }

@@ -116,6 +116,8 @@ export async function buildApp() {
   await app.register(portalRoutes, { prefix: "/api/client-portal" });
   const { importExportRoutes } = await import("./modules/client-portal/import-export.routes.js");
   await app.register(importExportRoutes, { prefix: "/api/client-portal" });
+  const { mailFeaturesRoutes } = await import("./modules/client-portal/mail-features.routes.js");
+  await app.register(mailFeaturesRoutes, { prefix: "/api/client-portal" });
   const { clientNotificationRoutes } = await import("./modules/notifications/notification.routes.js");
   await app.register(clientNotificationRoutes, { prefix: "/api/client-portal/notifications" });
 
