@@ -76,6 +76,8 @@ Domain Verification Enforcement:
   Webmail login returns a specific error explaining the domain is not verified
 Sieve Spam Filter:
   Global Sieve script auto-moves messages with spam headers (X-Spam-Flag: YES) to the Junk folder
+Per-User Sieve Scripts:
+  Dovecot configured for per-user sieve scripts (vacation auto-reply, forwarding rules, filter rules)
 ```
 
 ### Rspamd
@@ -136,10 +138,10 @@ Config:      max_connections = 300
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `admins` | Platform admin accounts | id (uuid), email, password_hash, role |
+| `admins` | Platform admin accounts | id (uuid), email, password_hash, role, totp_secret, totp_enabled |
 | `plans` | Subscription limits | id (uuid), name, max_domains, max_mailboxes, max_aliases, storage_per_mailbox_mb, max_send_per_day, price_monthly |
 | `clients` | Client companies (tenants) | id (uuid), name, slug, contact_email, contact_phone, plan_id (FK), status, billing_status, trial_ends_at, service_enabled_at, service_disabled_at, max_mailbox_override, max_domain_override |
-| `client_users` | Client portal login accounts | id (uuid), client_id (FK cascade), email, password_hash, name, role ('owner'/'manager'), status, last_login_at |
+| `client_users` | Client portal login accounts | id (uuid), client_id (FK cascade), email, password_hash, name, role ('owner'/'manager'), status, last_login_at, totp_secret, totp_enabled |
 | `domains` | Client email domains | id (uuid), client_id (FK cascade), domain_name, verification_token, verified, mx/spf/dkim/dmarc_configured, dkim_private_key, dkim_public_key, dkim_selector, status, verified_at |
 | `mailboxes` | Real email accounts | id (uuid), domain_id (FK cascade), client_id (FK cascade), local_part, password_hash, display_name, quota_mb, storage_used_mb, status, last_login_at |
 | `aliases` | Email forwarding rules | id (uuid), domain_id (FK cascade), client_id (FK cascade), source_local, destination, status |
@@ -147,11 +149,16 @@ Config:      max_connections = 300
 | `payments` | Payment records | id (uuid), invoice_id (FK), client_id (FK), amount, method ('bank_transfer'/'card'/'upi'/'manual'), transaction_ref, status ('completed'/'refunded'/'failed'), notes, paid_at |
 | `mail_logs` | Send/receive activity | id (bigserial), domain_id, mailbox_id, direction, from_address, to_address, subject, message_id, status, size_bytes, postfix_queue_id, error_message |
 | `dns_checks` | DNS verification history | id (bigserial), domain_id (FK), check_type, status, raw_result, checked_at |
-| `platform_settings` | Key-value config store | key (PK, varchar 100), value (text), label, group ('server'/'mail'/'branding'), updated_at |
+| `platform_settings` | Key-value config store | key (PK, varchar 100), value (text), label, group ('server'/'mail'/'branding'/'relay'), updated_at |
 | `audit_log` | Admin action history | id (bigserial), actor_type, actor_id, action, target_type, target_id, details (JSONB), ip_address (inet) |
 | `password_reset_requests` | DB-based password reset (no email) | id (uuid), client_user_id (FK), client_id (FK), mailbox_id (FK, nullable), email, request_type ('portal'/'mailbox'), status ('pending'/'completed'/'rejected'), resolved_by (FK admins), resolved_at, notes, created_at |
 | `blocklist` | Custom bans (IP/email/domain) | id (uuid), type ('ip'/'email'/'domain'), value, reason, permanent, expires_at, created_by (FK admins), created_at |
 | `notifications` | Centralized notification system | id (uuid), target_type ('admin'/'client'), target_id (uuid, nullable), type, title, message, action_url, severity ('info'/'warning'/'error'/'success'), read, dismissed, metadata (JSONB), created_at |
+| `scheduled_emails` | Deferred email sending | id (bigserial), sender, to, cc, bcc, subject, text, html, attachments_json (JSONB), scheduled_at, status ('pending'/'sent'/'failed'), sent_at, error |
+| `filter_rules` | Server-side mail filtering | id (uuid), mailbox_id (FK cascade), name, condition ('from'/'to'/'subject'/'any'), match_type ('contains'/'is'/'starts_with'), match_value, action ('move'/'delete'/'mark_read'/'forward'), action_value, enabled, priority |
+| `auto_responders` | Vacation auto-reply | id (uuid), mailbox_id (FK cascade), enabled, subject, body, start_date, end_date |
+| `catch_all_rules` | Domain catch-all forwarding | id (uuid), domain_id (FK cascade), client_id (FK cascade), enabled, forward_to |
+| `forwarding_rules` | Per-mailbox email forwarding | id (uuid), mailbox_id (FK cascade), client_id (FK cascade), forward_to, keep_copy, enabled |
 
 #### Unique Constraints
 
@@ -178,6 +185,7 @@ Key Namespaces:
   bull:*             -> BullMQ job queue data
   rspamd:*           -> spam filter bayes/stats (host Rspamd)
   imap:session:*     -> IMAP connection pool sessions (persistent connections, max 2 per mailbox)
+  webmail:contacts:* -> per-user contacts (sorted sets, max 200 per user)
 ```
 
 ---
@@ -421,8 +429,9 @@ Description: Abuse monitoring — Rspamd stats, high volume senders, bounce trac
 Files:
   abuse.routes.ts    -> abuse monitoring endpoints (registered under /api/admin/abuse prefix)
 Endpoints:
-  GET    /api/admin/abuse/overview   -> Rspamd stats, high volume senders, bounce rates, outbound by client
-  GET    /api/admin/abuse/alerts     -> active abuse alerts with auto-refresh
+  GET    /api/admin/abuse/overview              -> Rspamd stats, high volume senders, bounce rates, outbound by client
+  GET    /api/admin/abuse/alerts                -> active abuse alerts with auto-refresh
+  GET    /api/admin/abuse/abnormal-recipients   -> recipients with high bounce rates (last 7d): toAddress, total, bounced, bounceRate %, severity
 ```
 
 ### Module: bans
@@ -467,6 +476,11 @@ Default Settings (each with hint text for admin guidance):
   mail.max_attachment_mb     -> "25"                      (group: mail)    hint: attachment limit
   branding.platform_name     -> "WenMail"                 (group: branding) hint: shown in portal
   branding.support_email     -> "support@..."             (group: branding) hint: support contact
+  relay.mode                 -> "direct"                  (group: relay)    hint: direct or relay delivery
+  relay.host                 -> ""                        (group: relay)    hint: SMTP relay hostname
+  relay.port                 -> ""                        (group: relay)    hint: SMTP relay port
+  relay.username             -> ""                        (group: relay)    hint: SMTP relay username
+  relay.password             -> ""                        (group: relay)    hint: SMTP relay password
 Functions:
   buildDnsInstructions(domain) -> returns step-by-step DNS records using live settings (hostname, IP, DMARC email)
                                   Used by: domain creation route, admin dns-guide endpoint, portal dns-guide endpoint
@@ -564,6 +578,30 @@ Endpoints:
   DELETE /api/client-portal/password-resets/:id          -> dismiss/reject a mailbox password reset request
 ```
 
+### Module: client-portal/mail-features
+```
+Location:    backend/src/modules/client-portal/ (via mail-features.routes.ts)
+Type:        backend
+Depends On:  PostgreSQL (auto_responders, catch_all_rules, forwarding_rules, filter_rules), Dovecot Sieve, client auth guard
+Used By:     Client Portal frontend (mailbox settings)
+Description: Auto-responder, catch-all, forwarding rules, and filter rules — all generate Dovecot Sieve scripts
+Endpoints:
+  GET    /api/client-portal/auto-responder/:mailboxId   -> get auto-responder settings
+  PUT    /api/client-portal/auto-responder/:mailboxId   -> update vacation reply (generates Sieve vacation script)
+  GET    /api/client-portal/catch-all/:domainId         -> get catch-all rule
+  PUT    /api/client-portal/catch-all/:domainId         -> update catch-all forwarding
+  GET    /api/client-portal/forwarding/:mailboxId       -> get forwarding rules
+  POST   /api/client-portal/forwarding/:mailboxId       -> add forwarding rule (generates Sieve redirect)
+  DELETE /api/client-portal/forwarding/:mailboxId       -> remove forwarding rule
+  GET    /api/client-portal/users                       -> list portal users
+  POST   /api/client-portal/users                       -> create manager account (owner only)
+Filter Rules (managed via client portal):
+  Conditions: from, to, subject, any
+  Match types: contains, is, starts_with
+  Actions: move, delete, mark_read, forward
+  Integrates with Sieve script generation
+```
+
 ### Module: billing (Admin) — Password Resets
 ```
 Location:    backend/src/modules/billing/
@@ -592,18 +630,20 @@ Used By:     runs on schedule via BullMQ repeatable jobs
 Description: Periodic tasks that run inside the same Node.js process
 Files:
   index.ts                -> startWorkers() — creates all workers + registers schedules
-  queues.ts               -> queue definitions (dns-check, quota-sync, log-cleanup, domain-setup, mail-log-sync)
+  queues.ts               -> queue definitions (dns-check, quota-sync, log-cleanup, domain-setup, mail-log-sync, scheduled-send)
   dns-check.worker.ts     -> re-verify DNS records for all active domains (hourly, cron: 0 * * * *)
   quota-sync.worker.ts    -> sync mailbox storage usage from Dovecot (every 6h, cron: 0 */6 * * *)
   log-cleanup.worker.ts   -> delete old mail logs (daily at 3 AM, cron: 0 3 * * *)
   domain-setup.worker.ts  -> async domain provisioning (event-driven, dispatched on domain create)
-  mail-log.worker.ts      -> parse Postfix syslog, write delivery records to mail_logs table (every 5 min)
+  mail-log.worker.ts          -> parse Postfix syslog, write delivery records to mail_logs table (every 5 min)
+  scheduled-send.worker.ts   -> send pending scheduled emails via local Postfix port 25 (every minute)
 Queues:
   dns-check       -> repeatable (hourly)
   quota-sync      -> repeatable (every 6 hours)
   log-cleanup     -> repeatable (daily at 3 AM)
   domain-setup    -> on-demand (triggered when a domain is created)
   mail-log-sync   -> repeatable (every 5 minutes)
+  scheduled-send  -> repeatable (every minute)
 ```
 
 ### Mail Integration Layer
@@ -623,18 +663,44 @@ Files:
                      to newly created mailboxes via local Postfix
 ```
 
-### Webmail API
+### Module: webmail
 ```
 Location:    backend/src/modules/webmail/
 Type:        backend
-Description: Custom webmail endpoints — folder management, password change
+Description: Custom webmail endpoints — folder management, password change, contacts, templates, scheduling, labels
 IMAP Connection Pooling:
   - Persistent IMAP connections per session (max 2 per mailbox)
   - Redis-backed sessions for connection state
   - 13-83x faster than per-request connections
+Files:
+  webmail.routes.ts        -> IMAP endpoints (folders, messages, compose, search)
+  contacts.ts              -> contact management (Redis sorted set, auto-record recipients)
+  templates.ts             -> pre-built email templates (EmailTemplate interface, 6 templates)
+  totp.routes.ts           -> 2FA TOTP endpoints (setup, verify, disable, status)
+  mail-features.routes.ts  -> labels, filter rules, auto-responder, catch-all, forwarding
 Endpoints:
   POST   /api/webmail/ensure-folder       -> ensure an IMAP folder exists (creates if missing)
   POST   /api/webmail/change-password     -> change mailbox password from webmail
+  GET    /api/webmail/contacts?q=search   -> search contacts (Redis sorted set)
+  POST   /api/webmail/contacts            -> add contact manually
+  DELETE /api/webmail/contacts            -> remove contact
+  GET    /api/webmail/templates           -> list pre-built email templates
+  POST   /api/webmail/schedule            -> store email with scheduled time
+  GET    /api/webmail/scheduled           -> list user's scheduled emails
+  DELETE /api/webmail/scheduled/:id       -> cancel scheduled email
+  POST   /api/webmail/label               -> add/remove IMAP keywords ($label_ prefix, bulk UIDs)
+  POST   /api/auth/totp/setup             -> generate TOTP secret + QR code (otpauth + qrcode)
+  POST   /api/auth/totp/verify            -> validate 6-digit code, enable 2FA
+  POST   /api/auth/totp/disable           -> disable 2FA
+  GET    /api/auth/totp/status            -> check if 2FA enabled
+Contacts:
+  - Redis key: webmail:contacts:{email} (sorted set, max 200 per user)
+  - Auto-records recipients when sending emails
+  - Frontend: contacts.tsx page with avatars, search, compose-to
+Templates:
+  - 6 templates: Welcome, Meeting Request, Invoice Reminder, Follow-up, Thank You, Announcement
+  - Each has: id, name, category, subject, html, text
+  - Uses [placeholder] variables for customization
 Compose Window:
   - Rich text editor (Tiptap) — bold, italic, underline, bullet/ordered lists, links, blockquotes, undo/redo
   - Three-state window: minimize / default / expanded (95vw x 92vh)
@@ -644,11 +710,24 @@ Compose Window:
 Auth:
   - Login cooldown: 5 failed attempts = 15 min lock per email address
   - Forgot password: mail user requests reset, client gets notification in portal
+  - 2FA (TOTP): optional two-factor via otpauth + qrcode npm packages
 Webmail Settings (4 tabs):
   1. General   -> display name, page size
   2. Compose   -> signature editor
   3. Account   -> change password (strength indicator, confirm field, eye toggle modal)
   4. Mail Setup -> IMAP/SMTP connection info for external clients
+Keyboard Shortcuts:
+  c=compose, r=reply, a=replyAll, f=forward, /=search, Delete=trash, e=archive, Esc=close
+Conversation Threading:
+  - Groups messages by cleaned subject (strips Re:/Fwd:)
+  - Thread count badge in message list
+  - Stored in localStorage (wenmail-thread-view)
+Sender Avatars:
+  - SenderAvatar component: colored circle with initial letter
+  - 10-color palette, consistent color per sender (hash-based)
+Print Email:
+  - Printer icon in message detail toolbar
+  - Opens formatted print preview in new window
 ```
 
 ### Seed Script
@@ -701,7 +780,7 @@ Location:    backend/src/db/
 Type:        backend (database)
 Files:
   index.ts        -> Drizzle ORM instance (postgres-js driver, pool = 50 connections)
-  schema.ts       -> all table definitions (15 tables) + relations
+  schema.ts       -> all table definitions (21 tables) + relations
   migrations/
     0001_*.sql                 -> initial schema
     0002_fuzzy_chimera.sql     -> adds password_reset_requests table
@@ -889,9 +968,10 @@ Description: Ban management — Fail2ban IP view/ban/unban, custom blocklist (em
 Location:    frontend/src/pages/admin/settings.tsx
 Type:        frontend
 Depends On:  GET /api/admin/settings, PUT /api/admin/settings
-Description: Platform settings editor — server hostname, IP, webmail URL, mail config, branding
+Description: Platform settings editor — server hostname, IP, webmail URL, mail config, branding, relay configuration
              Each field shows a blue hint explaining what it does and how to fill it.
              Hints come from the backend (settings.service.ts DEFAULTS).
+             Relay group: switch between direct delivery and SMTP relay (auto-applies to Postfix on save).
 ```
 
 ### Admin Shared Components
@@ -910,6 +990,8 @@ Files:
   notification-bell.tsx -> bell icon dropdown with unread count badge, scrollable notification list,
                            per-item actions (navigate via action_url, mark read, dismiss),
                            bulk actions (mark all read, clear all)
+  sender-avatar.tsx     -> colored circle with initial letter (hash-based color from 10-color palette)
+  locale-switcher.tsx   -> EN/हि language toggle component
 Admin Sidebar Nav Items:
   Dashboard, Clients, Domains, Mailboxes, Aliases, Mail Logs, Audit Logs, Billing, Server Health, Abuse Monitor, Ban Management, Settings
 Icons: lucide-react
@@ -921,6 +1003,19 @@ Location:    frontend/src/hooks/
 Type:        frontend (shared)
 Files:
   use-auth.ts       -> admin login state (isAuthenticated, loading), token management from localStorage
+  use-locale.ts     -> LocaleContext + useLocale() hook + useLocaleProvider(), localStorage persistence (wenmail-locale)
+```
+
+### i18n (Translations)
+```
+Location:    frontend/src/i18n/
+Type:        frontend (shared)
+Files:
+  translations.ts   -> Record<Locale, Record<string, string>> — 100+ translated strings
+Supported Locales:
+  "en" (English), "hi" (Hindi)
+Categories:
+  common, auth, mail, portal, landing
 ```
 
 ### Admin API Layer
@@ -986,6 +1081,15 @@ Files:
   logs.tsx            -> client's own mail logs (scoped to their domains)
   billing.tsx         -> view invoices and payment history
   migration.tsx       -> import/export: CSV bulk mailbox creation, IMAP sync migration, export info
+```
+
+### Webmail Pages
+```
+Location:    frontend/src/pages/mail/
+Type:        frontend
+Files:
+  contacts.tsx        -> contact management page (search, add, delete, compose-to, sender avatars)
+                         Route: /mail/contacts, contacts icon in webmail sidebar
 ```
 
 ---
@@ -1141,7 +1245,7 @@ backend/
       env.ts                            -> Zod-validated environment variables
     db/
       index.ts                          -> Drizzle ORM instance (postgres-js)
-      schema.ts                         -> all 16 table definitions + relations
+      schema.ts                         -> all 21 table definitions + relations
     lib/
       errors.ts                         -> AppError + typed subclasses
       logger.ts                         -> pino logger
@@ -1194,6 +1298,12 @@ backend/
         settings.service.ts             -> key-value store, defaults, buildDnsInstructions()
       notifications/
         notification.routes.ts          -> admin notification endpoints (list, read, dismiss, clear)
+      webmail/
+        webmail.routes.ts               -> IMAP endpoints (folders, messages, compose, search)
+        contacts.ts                     -> contact management (Redis sorted set, auto-record)
+        templates.ts                    -> pre-built email templates (6 templates)
+        totp.routes.ts                  -> 2FA TOTP setup/verify/disable/status
+        mail-features.routes.ts         -> labels, filter rules, auto-responder, catch-all, forwarding
     workers/
       index.ts                          -> startWorkers() orchestrator
       queues.ts                         -> BullMQ queue definitions
@@ -1202,6 +1312,7 @@ backend/
       log-cleanup.worker.ts            -> daily old log deletion
       quota-sync.worker.ts             -> periodic storage usage sync
       mail-log.worker.ts               -> parse Postfix syslog -> mail_logs (every 5 min)
+      scheduled-send.worker.ts        -> send pending scheduled emails (every minute)
 frontend/
   Dockerfile
   index.html
@@ -1231,9 +1342,14 @@ frontend/
       email-chips.tsx                   -> Gmail-style email chip input (To/CC/BCC)
       rich-editor.tsx                   -> Tiptap rich text compose editor
       notification-bell.tsx             -> bell dropdown with unread count, navigate/read/dismiss actions
+      sender-avatar.tsx                 -> colored circle with initial letter (hash-based color)
+      locale-switcher.tsx               -> EN/हि language toggle component
     hooks/
       use-auth.ts                       -> admin auth state + token management
       use-portal-auth.ts                -> portal auth state + token management (portalAccessToken)
+      use-locale.ts                     -> LocaleContext, useLocale() hook, useLocaleProvider()
+    i18n/
+      translations.ts                   -> multi-language strings (en, hi) — 100+ keys
     lib/
       utils.ts                          -> cn() (clsx + tailwind-merge)
     pages/
@@ -1259,6 +1375,8 @@ frontend/
       logs/
         mail.tsx                        -> filterable mail log table
         audit.tsx                       -> admin audit trail
+      mail/
+        contacts.tsx                    -> webmail contacts page (search, add, delete, compose-to)
       portal/
         login.tsx                       -> client portal login form (with forgot password flow, login cooldown)
         dashboard.tsx                   -> client overview (counts, plan limits, quick actions)

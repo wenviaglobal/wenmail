@@ -97,11 +97,13 @@ WHY NOT MongoDB:
 ### 4. Redis — Session Store + Job Queue + Rate Limiter
 
 ```
-WHAT Redis handles (3 specific jobs):
+WHAT Redis handles (5 specific jobs):
   1. Session store     -> JWT refresh tokens, admin sessions
   2. Job queue backend -> BullMQ stores job data here
   3. Rate limiter      -> per-user/domain send rate counters (sliding window)
   4. IMAP pool sessions -> persistent IMAP connections per webmail session (max 2 per mailbox)
+  5. Contacts store    -> webmail contacts per user (sorted sets, max 200)
+  5. Contacts store    -> webmail contacts per user (sorted sets, max 200)
 
 WHAT Redis does NOT handle:
   - NOT a cache layer (premature at this scale — PostgreSQL is fast enough)
@@ -133,6 +135,7 @@ JOBS:
   log-cleanup      -> purge old mail logs              (cron: daily at 3 AM)
   domain-setup     -> verify domain + gen DKIM         (on-demand, triggered by API)
   mail-log-sync    -> parse Postfix syslog, write to mail_logs table (cron: every 5 min)
+  scheduled-send   -> send pending scheduled emails    (cron: every minute)
 
 WHY NOT a separate worker service:
   - Same codebase, same DB access, same logic
@@ -273,6 +276,7 @@ WHY NOT Next.js:
 | Job Queue   | **BullMQ**                 | Background workers on Redis (requires Redis 5+) |
 | Validation  | **Zod**                    | Runtime schema validation         |
 | Auth        | **JWT (@fastify/jwt) + argon2** | Dual auth (admin + client), modern hashing |
+| 2FA         | **otpauth + qrcode**           | TOTP two-factor authentication             |
 | Logging     | **Pino**                   | Structured JSON logs, fast        |
 | Frontend    | **React 19 + Vite 6**     | Fast SPA for admin dashboard + client portal |
 | UI Kit      | **shadcn/ui + TailwindCSS 4** | Production-ready components    |
@@ -320,6 +324,8 @@ CREATE TABLE admins (
     email           VARCHAR(255) UNIQUE NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     role            VARCHAR(20) DEFAULT 'admin',
+    totp_secret     VARCHAR(255),                -- 2FA TOTP secret (base32)
+    totp_enabled    BOOLEAN DEFAULT FALSE,       -- whether 2FA is active
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -359,6 +365,8 @@ CREATE TABLE client_users (
     role            VARCHAR(20) DEFAULT 'owner',     -- owner, manager
     status          VARCHAR(20) DEFAULT 'active',
     last_login_at   TIMESTAMPTZ,
+    totp_secret     VARCHAR(255),                -- 2FA TOTP secret (base32)
+    totp_enabled    BOOLEAN DEFAULT FALSE,       -- whether 2FA is active
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -498,7 +506,7 @@ CREATE TABLE platform_settings (
     key         VARCHAR(100) PRIMARY KEY,
     value       TEXT NOT NULL,
     label       VARCHAR(255),        -- human-readable label for admin UI
-    "group"     VARCHAR(50),         -- server, mail, branding
+    "group"     VARCHAR(50),         -- server, mail, branding, relay
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -511,6 +519,11 @@ CREATE TABLE platform_settings (
 --   mail.max_attachment_mb  -> Max attachment size
 --   branding.platform_name  -> Platform display name
 --   branding.support_email  -> Support contact email
+--   relay.mode              -> direct or relay (delivery method)
+--   relay.host              -> SMTP relay hostname
+--   relay.port              -> SMTP relay port
+--   relay.username           -> SMTP relay username
+--   relay.password           -> SMTP relay password
 
 -- ============================================
 -- AUDIT LOG
@@ -579,6 +592,89 @@ CREATE TABLE notifications (
     metadata    JSONB,                       -- flexible extra data
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================
+-- SCHEDULED EMAILS (deferred send)
+-- ============================================
+
+CREATE TABLE scheduled_emails (
+    id                BIGSERIAL PRIMARY KEY,
+    sender            VARCHAR(255) NOT NULL,
+    "to"              TEXT NOT NULL,
+    cc                TEXT,
+    bcc               TEXT,
+    subject           VARCHAR(500),
+    text              TEXT,
+    html              TEXT,
+    attachments_json  JSONB,
+    scheduled_at      TIMESTAMPTZ NOT NULL,
+    status            VARCHAR(20) DEFAULT 'pending',   -- pending, sent, failed
+    sent_at           TIMESTAMPTZ,
+    error             TEXT,
+    created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- FILTER RULES (server-side mail filtering)
+-- ============================================
+
+CREATE TABLE filter_rules (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id      UUID NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,
+    condition       VARCHAR(20) NOT NULL,        -- from, to, subject, any
+    match_type      VARCHAR(20) NOT NULL,        -- contains, is, starts_with
+    match_value     VARCHAR(255) NOT NULL,
+    action          VARCHAR(20) NOT NULL,        -- move, delete, mark_read, forward
+    action_value    VARCHAR(255),                -- target folder, forward address, etc.
+    enabled         BOOLEAN DEFAULT TRUE,
+    priority        INT DEFAULT 0,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- AUTO RESPONDERS (vacation reply)
+-- ============================================
+
+CREATE TABLE auto_responders (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id      UUID NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+    enabled         BOOLEAN DEFAULT FALSE,
+    subject         VARCHAR(500),
+    body            TEXT,
+    start_date      TIMESTAMPTZ,
+    end_date        TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- CATCH-ALL RULES (domain-level catch-all)
+-- ============================================
+
+CREATE TABLE catch_all_rules (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain_id       UUID NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    enabled         BOOLEAN DEFAULT FALSE,
+    forward_to      VARCHAR(255) NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- FORWARDING RULES (per-mailbox forwarding)
+-- ============================================
+
+CREATE TABLE forwarding_rules (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id      UUID NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+    client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    forward_to      VARCHAR(255) NOT NULL,
+    keep_copy       BOOLEAN DEFAULT TRUE,
+    enabled         BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ### Key Relationships
@@ -597,6 +693,10 @@ domains 1--* aliases
 domains 1--* dns_checks
 client_users 1--* password_reset_requests
 mailboxes 1--* password_reset_requests (mailbox_id, for mailbox resets)
+mailboxes 1--* filter_rules
+mailboxes 1--* auto_responders
+mailboxes 1--* forwarding_rules
+domains 1--* catch_all_rules
 admins 1--* password_reset_requests (resolved_by)
 ```
 
@@ -616,7 +716,7 @@ backend/
 │   │
 │   ├── db/
 │   │   ├── index.ts                   # Drizzle client instance
-│   │   ├── schema.ts                  # ALL Drizzle table definitions (16 tables)
+│   │   ├── schema.ts                  # ALL Drizzle table definitions (21 tables)
 │   │   └── migrations/               # SQL migration files (drizzle-kit)
 │   │       ├── 0001_*.sql             # Initial schema
 │   │       └── 0002_fuzzy_chimera.sql # password_reset_requests table
@@ -679,8 +779,15 @@ backend/
 │   │   │   ├── settings.routes.ts     # GET/PUT /api/admin/settings
 │   │   │   └── settings.service.ts    # getSetting(), getAllSettings(), updateSettings(), buildDnsInstructions()
 │   │   │
-│   │   └── notifications/
-│   │       └── notification.routes.ts # Admin notification endpoints (list, read, dismiss, clear)
+│   │   ├── notifications/
+│   │   │   └── notification.routes.ts # Admin notification endpoints (list, read, dismiss, clear)
+│   │   │
+│   │   └── webmail/
+│   │       ├── webmail.routes.ts      # Webmail IMAP endpoints (folders, messages, compose, search)
+│   │       ├── contacts.ts            # Contact management (Redis sorted set, auto-record recipients)
+│   │       ├── templates.ts           # Pre-built email templates (Welcome, Meeting, Invoice, etc.)
+│   │       ├── totp.routes.ts         # 2FA TOTP setup/verify/disable/status
+│   │       └── mail-features.routes.ts # Labels, filter rules, auto-responder, catch-all, forwarding
 │   │
 │   ├── workers/
 │   │   ├── index.ts                   # Register all workers, check Redis version, set schedules
@@ -689,7 +796,8 @@ backend/
 │   │   ├── quota-sync.worker.ts       # Periodic: calculate mailbox sizes (every 6h)
 │   │   ├── log-cleanup.worker.ts      # Periodic: purge old logs (daily at 3 AM)
 │   │   ├── domain-setup.worker.ts     # On-demand: verify domain + gen DKIM
-│   │   └── mail-log.worker.ts         # Periodic: parse Postfix syslog -> mail_logs table (every 5 min)
+│   │   ├── mail-log.worker.ts         # Periodic: parse Postfix syslog -> mail_logs table (every 5 min)
+│   │   └── scheduled-send.worker.ts  # Periodic: send scheduled emails (every minute)
 │   │
 │   ├── mail/
 │   │   ├── postfix.ts                 # Execute postfix reload, reloadPostfix(), reloadDovecot()
@@ -768,6 +876,10 @@ frontend/
 │   │   │   ├── billing.tsx            # Invoices, payments, billing overview
 │   │   │   └── settings.tsx           # Platform settings (hostname, IP, DMARC email, etc.)
 │   │   │
+│   │   │  ── WEBMAIL PAGES ──
+│   │   ├── mail/
+│   │   │   └── contacts.tsx           # Contact management (search, add, delete, compose-to, avatars)
+│   │   │
 │   │   │  ── CLIENT PORTAL PAGES ──
 │   │   └── portal/
 │   │       ├── login.tsx              # Client login
@@ -790,11 +902,17 @@ frontend/
 │   │   ├── stat-card.tsx              # Dashboard stat cards
 │   │   ├── email-chips.tsx            # Gmail-style email chips (To/CC/BCC) — type+Enter, X remove, double-click edit, paste multiple
 │   │   ├── rich-editor.tsx            # Tiptap rich text editor (bold/italic/underline/lists/links/quotes/undo-redo)
-│   │   └── notification-bell.tsx      # Bell dropdown with unread count badge, actions: navigate, mark read, dismiss
+│   │   ├── notification-bell.tsx      # Bell dropdown with unread count badge, actions: navigate, mark read, dismiss
+│   │   ├── sender-avatar.tsx         # Colored circle with initial letter (hash-based color from 10-color palette)
+│   │   └── locale-switcher.tsx       # EN/हि language toggle component
 │   │
 │   ├── hooks/
 │   │   ├── use-auth.ts               # Admin auth state
-│   │   └── use-portal-auth.ts        # Client portal auth state
+│   │   ├── use-portal-auth.ts        # Client portal auth state
+│   │   └── use-locale.ts             # LocaleContext, useLocale() hook, useLocaleProvider()
+│   │
+│   ├── i18n/
+│   │   └── translations.ts           # Multi-language strings (en, hi) — 100+ keys across common, auth, mail, portal, landing
 │   │
 │   └── lib/
 │       └── utils.ts                   # cn() helper, formatters
@@ -856,6 +974,7 @@ frontend/
 | DELETE | /api/admin/bans/blocklist         | Remove blocklist entry                      |
 | GET    | /api/admin/abuse/overview         | Abuse overview (Rspamd stats, high volume, bounces) |
 | GET    | /api/admin/abuse/alerts           | Active abuse alerts (auto-refresh)          |
+| GET    | /api/admin/abuse/abnormal-recipients | Recipients with high bounce rates (last 7d) |
 | GET    | /api/admin/notifications          | List admin notifications                   |
 | GET    | /api/admin/notifications/unread-count | Unread notification count                |
 | PUT    | /api/admin/notifications/:id/read | Mark notification as read                  |
@@ -863,6 +982,10 @@ frontend/
 | POST   | /api/admin/notifications/mark-all-read | Mark all notifications read           |
 | POST   | /api/admin/notifications/clear-all | Clear all notifications                  |
 | GET    | /api/health                       | Public health check                        |
+| POST   | /api/auth/totp/setup              | Generate TOTP secret + QR code             |
+| POST   | /api/auth/totp/verify             | Validate 6-digit code, enable 2FA          |
+| POST   | /api/auth/totp/disable            | Disable 2FA                                |
+| GET    | /api/auth/totp/status             | Check if 2FA is enabled                    |
 
 ### Client Portal Routes (JWT type: client)
 
@@ -904,6 +1027,23 @@ frontend/
 | GET    | /api/client-portal/export/info                 | Export instructions and info           |
 | POST   | /api/webmail/ensure-folder                     | Ensure IMAP folder exists               |
 | POST   | /api/webmail/change-password                   | Change mailbox password from webmail    |
+| GET    | /api/webmail/contacts                          | List/search contacts (Redis sorted set) |
+| POST   | /api/webmail/contacts                          | Add contact manually                    |
+| DELETE | /api/webmail/contacts                          | Remove contact                          |
+| GET    | /api/webmail/templates                         | List pre-built email templates          |
+| POST   | /api/webmail/schedule                          | Schedule email for later sending        |
+| GET    | /api/webmail/scheduled                         | List user's scheduled emails            |
+| DELETE | /api/webmail/scheduled/:id                     | Cancel scheduled email                  |
+| POST   | /api/webmail/label                             | Add/remove IMAP keyword labels          |
+| GET    | /api/client-portal/users                       | List portal users                       |
+| POST   | /api/client-portal/users                       | Create manager account (owner only)     |
+| GET    | /api/client-portal/auto-responder/:mailboxId   | Get auto-responder settings             |
+| PUT    | /api/client-portal/auto-responder/:mailboxId   | Update auto-responder (vacation reply)  |
+| GET    | /api/client-portal/catch-all/:domainId         | Get catch-all rule for domain           |
+| PUT    | /api/client-portal/catch-all/:domainId         | Update catch-all forwarding rule        |
+| GET    | /api/client-portal/forwarding/:mailboxId       | Get forwarding rules for mailbox        |
+| POST   | /api/client-portal/forwarding/:mailboxId       | Add forwarding rule                     |
+| DELETE | /api/client-portal/forwarding/:mailboxId       | Remove forwarding rule                  |
 
 ---
 
@@ -911,7 +1051,7 @@ frontend/
 
 ### Platform Settings System
 
-The `platform_settings` table is a key-value store configurable from the admin UI. Settings are grouped (server, mail, branding) and each has a human-readable label plus a hint explaining what it does and how to fill it. The service layer provides defaults and falls back to environment variables when DB values are missing.
+The `platform_settings` table is a key-value store configurable from the admin UI. Settings are grouped (server, mail, branding, relay) and each has a human-readable label plus a hint explaining what it does and how to fill it. The service layer provides defaults and falls back to environment variables when DB values are missing.
 
 Used by `buildDnsInstructions()` to generate personalized, step-by-step DNS setup guides for each client domain. The instructions include the actual server hostname, IP, and DMARC email from settings so clients get copy-paste-ready DNS records. Admin settings page shows hints in blue below each field so the platform operator knows exactly what each setting controls.
 
@@ -1031,6 +1171,74 @@ client sees only `mailbox` type requests. Clients can dismiss/reject requests vi
 
 5 failed login attempts = 15 minute lock per email address. Applies to webmail login.
 Prevents brute-force attacks at the application level (complements Fail2ban at the infrastructure level).
+
+### Relay Configuration
+
+Admin can switch outgoing email delivery between **direct** (Postfix delivers directly to recipient MX) and **SMTP relay** (routes through a third-party relay like SendGrid, Mailgun). Settings are in the `relay` group: `relay.mode`, `relay.host`, `relay.port`, `relay.username`, `relay.password`. On save, the backend writes `sasl_passwd`, runs `postmap`, and reloads Postfix automatically.
+
+### Contact Management (Webmail)
+
+Full contacts page at `/mail/contacts` with search, add, delete, and compose-to functionality. Contacts are stored in Redis sorted sets (`webmail:contacts:{email}`, max 200 per user). Recipients are auto-recorded when sending emails. Backend endpoints: `GET/POST/DELETE /api/webmail/contacts`.
+
+### Multi-language (i18n)
+
+Infrastructure for multi-language support. `translations.ts` contains `Record<Locale, Record<string, string>>` with 100+ translated strings across common, auth, mail, portal, and landing categories. Supported locales: English (`en`) and Hindi (`hi`). Uses `LocaleContext` + `useLocale()` hook with `LocaleSwitcher` component (EN/हि toggle). Locale persists in `localStorage` (`wenmail-locale`).
+
+### Email Templates
+
+6 pre-built templates: Welcome, Meeting Request, Invoice Reminder, Follow-up, Thank You, Announcement. Each has id, name, category, subject, html, and text fields. Templates use `[placeholder]` variables for customization. Served via `GET /api/webmail/templates`. Defined in `templates.ts` with `EmailTemplate` interface.
+
+### Abnormal Recipient Detection
+
+`GET /api/admin/abuse/abnormal-recipients` queries `mail_logs` for external recipients with high bounce rates over the last 7 days. Returns `toAddress`, total sent, bounced count, `bounceRate` %, and severity (`warning`/`critical`). Helps admins identify problematic addresses causing delivery issues.
+
+### Email Scheduling
+
+Emails can be scheduled for future delivery. Stored in the `scheduled_emails` table with sender, recipients, content, and `scheduled_at` timestamp. The `scheduled-send` worker runs every minute, picks up pending emails, and sends them via local Postfix (port 25). Users can list and cancel scheduled emails via `GET/DELETE /api/webmail/scheduled`.
+
+### Labels/Tags (IMAP Keywords)
+
+`POST /api/webmail/label` adds or removes IMAP keyword flags on messages. Labels are stored as IMAP flags with `$label_` prefix. Supports bulk operations on multiple UIDs.
+
+### Server-side Filter Rules
+
+Per-mailbox filter rules stored in the `filter_rules` table. Conditions: `from`, `to`, `subject`, `any`. Match types: `contains`, `is`, `starts_with`. Actions: `move`, `delete`, `mark_read`, `forward`. Rules integrate with Dovecot Sieve script generation. Managed via client portal.
+
+### 2FA (TOTP)
+
+Two-factor authentication using TOTP (Time-based One-Time Password). Both `admins` and `client_users` tables have `totp_secret` and `totp_enabled` fields. Setup generates a secret + QR code (`otpauth` + `qrcode` npm packages). Endpoints: `POST /api/auth/totp/setup`, `/verify`, `/disable`, `GET /api/auth/totp/status`. Defined in `totp.routes.ts`.
+
+### Conversation Threading
+
+Frontend groups messages by cleaned subject (strips `Re:`/`Fwd:` prefixes). Thread count badge shown in the message list. Enabled by default, preference stored in `localStorage` (`wenmail-thread-view`).
+
+### Auto-responder / Vacation Reply
+
+Per-mailbox vacation auto-reply. Stored in the `auto_responders` table with subject, body, start/end dates. Managed via `GET/PUT /api/client-portal/auto-responder/:mailboxId`. Generates a Dovecot Sieve vacation script per mailbox. Dovecot is configured for per-user sieve scripts.
+
+### Catch-all Email
+
+Domain-level catch-all forwarding. The `catch_all_rules` table links a domain to a target mailbox. Emails to non-existent addresses at the domain are forwarded to the specified address. Managed via `GET/PUT /api/client-portal/catch-all/:domainId`.
+
+### Email Forwarding Rules
+
+Per-mailbox forwarding to external addresses. The `forwarding_rules` table supports a `keep_copy` option (forward + keep in mailbox). Generates Sieve redirect rules. Managed via `GET/POST/DELETE /api/client-portal/forwarding/:mailboxId`.
+
+### Client Self-Service Portal Users
+
+Client owners can create manager accounts for their organization via `POST /api/client-portal/users`. Only users with `role='owner'` can create new portal users. Listed via `GET /api/client-portal/users`.
+
+### Sender Avatars
+
+Colored circle with the sender's initial letter in the webmail message list. Uses a 10-color palette with consistent color per sender (hash-based). Implemented as `SenderAvatar` component.
+
+### Keyboard Shortcuts (Webmail)
+
+Keyboard shortcuts for common webmail actions: `c`=compose, `r`=reply, `a`=reply all, `f`=forward, `/`=focus search, `Delete`=trash, `e`=archive, `Esc`=close message.
+
+### Print Email
+
+Printer icon in the message detail toolbar. Opens a formatted print preview in a new window with proper styling for printing.
 
 ### Email Client Setup Instructions
 
