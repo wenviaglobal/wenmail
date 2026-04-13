@@ -58,6 +58,10 @@ export function PasswordResetsPage() {
                     <p className="font-medium text-gray-900">{req.email}</p>
                     <p className="text-sm text-gray-500">
                       {req.clientName} &middot; {new Date(req.createdAt).toLocaleString()}
+                      {" "}&middot;{" "}
+                      <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${(req as any).requestType === "mailbox" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>
+                        {(req as any).requestType === "mailbox" ? "Mailbox User" : "Portal User"}
+                      </span>
                     </p>
                   </div>
                   {resolving !== req.id ? (

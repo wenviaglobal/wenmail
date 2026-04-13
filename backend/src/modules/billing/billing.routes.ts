@@ -260,6 +260,7 @@ export async function billingRoutes(app: FastifyInstance) {
     return db
       .select({
         id: passwordResetRequests.id,
+        requestType: passwordResetRequests.requestType,
         email: passwordResetRequests.email,
         status: passwordResetRequests.status,
         clientName: clients.name,
@@ -268,6 +269,7 @@ export async function billingRoutes(app: FastifyInstance) {
       })
       .from(passwordResetRequests)
       .innerJoin(clients, eq(passwordResetRequests.clientId, clients.id))
+      .where(eq(passwordResetRequests.requestType, "portal"))
       .orderBy(desc(passwordResetRequests.createdAt));
   });
 
@@ -286,12 +288,19 @@ export async function billingRoutes(app: FastifyInstance) {
 
     if (!resetReq) throw new NotFoundError("Password reset request", request.params.id);
 
-    // Update client user password
-    const newHash = await hashPassword(newPassword);
-    await db
-      .update(clientUsers)
-      .set({ passwordHash: newHash, updatedAt: new Date() })
-      .where(eq(clientUsers.id, resetReq.clientUserId));
+    // Update password based on request type
+    if (resetReq.requestType === "mailbox" && resetReq.mailboxId) {
+      // Mailbox user — use Dovecot-compatible hash
+      const { hashPasswordForDovecot } = await import("../../lib/password.js");
+      const mailboxHash = hashPasswordForDovecot(newPassword);
+      await db.update(mailboxes).set({ passwordHash: mailboxHash, updatedAt: new Date() }).where(eq(mailboxes.id, resetReq.mailboxId));
+      // Invalidate IMAP pool
+      try { const { invalidateByEmail } = await import("../../modules/webmail/imap-pool.js"); invalidateByEmail(resetReq.email); } catch {}
+    } else if (resetReq.clientUserId) {
+      // Portal user — use argon2 hash
+      const newHash = await hashPassword(newPassword);
+      await db.update(clientUsers).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(clientUsers.id, resetReq.clientUserId));
+    }
 
     // Mark request as completed
     const admin = request.user as { id: string };
