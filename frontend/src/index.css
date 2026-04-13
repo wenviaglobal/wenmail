@@ -232,6 +232,27 @@ nav button.active {
   padding-left: calc(0.75rem - 3px) !important;
 }
 
+/* Tiptap editor styles */
+.tiptap {
+  min-height: 200px;
+  outline: none;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+.dark .tiptap p.is-editor-empty:first-child::before {
+  color: #64748b;
+}
+.tiptap ul, .tiptap ol { padding-left: 1.5rem; }
+.tiptap ul { list-style: disc; }
+.tiptap ol { list-style: decimal; }
+.tiptap blockquote { border-left: 3px solid #d1d5db; padding-left: 1rem; margin-left: 0; color: #6b7280; }
+.dark .tiptap blockquote { border-left-color: #475569; color: #94a3b8; }
+
 /* Scrollbar */
 .dark ::-webkit-scrollbar-track {
   background: rgb(15 23 42);

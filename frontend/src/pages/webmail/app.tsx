@@ -5,9 +5,11 @@ import {
   Pencil, ArrowLeft, LogOut, Menu, X, Folder, Search, Reply, ReplyAll,
   Forward, Paperclip, Download, CheckSquare, Square, StarOff,
   MailOpen, MailCheck, Settings, Save, Eye, EyeOff, ChevronDown, ChevronUp,
+  Minus, Maximize2, Minimize2,
 } from "lucide-react";
 import { ThemeToggle } from "../../components/theme-toggle";
 import { EmailChips } from "../../components/email-chips";
+import { RichEditor } from "../../components/rich-editor";
 
 const API = "/api/webmail";
 function headers() {
@@ -406,10 +408,13 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [windowState, setWindowState] = useState<"default" | "minimized" | "expanded">("default");
   const dragCounter = useRef(0);
   const totalAttachmentSize = attachments.reduce((sum, a) => sum + a.size, 0);
 
   const isDraft = !!compose.draftUid;
+  const minimized = windowState === "minimized";
+  const expanded = windowState === "expanded";
 
   // Drag and drop handlers
   function handleDragEnter(e: React.DragEvent) {
@@ -466,9 +471,9 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   const [cc, setCc] = useState<string[]>(isDraft && original?.cc ? original.cc.map(c => c.address) : []);
   const [bcc, setBcc] = useState<string[]>([]);
   const [showCcBcc, setShowCcBcc] = useState(cc.length > 0);
-  const [minimized, setMinimized] = useState(false);
   const [subject, setSubject] = useState(prefillSubject);
   const [text, setText] = useState(prefillBody);
+  const [html, setHtml] = useState("");
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
@@ -522,6 +527,7 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
     try {
       await api("/send", { method: "POST", body: JSON.stringify({
         to: to.join(", "), subject, text,
+        html: html || undefined,
         cc: cc.length > 0 ? cc.join(", ") : undefined,
         bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -543,9 +549,13 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
   }
 
   return (
-    <div className={`fixed z-50 ${minimized ? "bottom-0 right-4 w-80" : "inset-0 bg-black/50 flex items-end md:items-center justify-center"}`}>
+    <div className={`fixed z-50 transition-all ${minimized ? "bottom-0 right-4 w-80" : "inset-0 bg-black/50 flex items-end md:items-center justify-center"}`}>
       <div
-        className={`bg-white dark:bg-slate-800 shadow-2xl flex flex-col transition-all relative ${minimized ? "rounded-t-xl h-12 border border-gray-200 dark:border-slate-700" : "w-full md:w-[680px] md:rounded-xl max-h-[90vh] md:max-h-[80vh]"}`}
+        className={`bg-white dark:bg-slate-800 shadow-2xl flex flex-col transition-all relative ${
+          minimized ? "rounded-t-xl h-12 border border-gray-200 dark:border-slate-700"
+          : expanded ? "w-[95vw] h-[92vh] rounded-xl"
+          : "w-full md:w-[680px] md:rounded-xl max-h-[90vh] md:max-h-[80vh]"
+        }`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -561,16 +571,19 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
             </div>
           </div>
         )}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700 shrink-0 cursor-pointer" onClick={() => minimized && setMinimized(false)}>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-slate-700 shrink-0 cursor-pointer bg-gray-50 dark:bg-slate-800/80 rounded-t-xl" onClick={() => minimized && setWindowState("default")}>
           <h3 className="font-semibold dark:text-white text-sm truncate">
             {isDraft ? "Edit Draft" : mode === "new" ? "New Message" : mode === "reply" ? "Reply" : mode === "replyAll" ? "Reply All" : "Forward"}
             {minimized && to.length > 0 && <span className="text-gray-400 font-normal ml-2">— {to[0]}</span>}
           </h3>
-          <div className="flex items-center gap-1">
-            <button type="button" onClick={(e) => { e.stopPropagation(); setMinimized(!minimized); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1" title={minimized ? "Expand" : "Minimize"}>
-              {minimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <div className="flex items-center gap-0.5">
+            <button type="button" onClick={(e) => { e.stopPropagation(); setWindowState("minimized"); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition" title="Minimize">
+              <Minus size={14} />
             </button>
-            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1"><X size={16} /></button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); setWindowState(expanded ? "default" : "expanded"); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition" title={expanded ? "Restore" : "Full screen"}>
+              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition" title="Close"><X size={14} /></button>
           </div>
         </div>
         {!minimized && (
@@ -627,11 +640,8 @@ function ComposeModal({ email, compose, onClose, onSent }: ComposeProps) {
             </div>
           )}
 
-          {/* Body — scrollable, takes remaining space */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Write your message..."
-              className="w-full h-full p-4 text-sm outline-none resize-none bg-transparent dark:text-white min-h-[200px]" />
-          </div>
+          {/* Rich text editor — scrollable, takes remaining space */}
+          <RichEditor content={text} onChange={(t, h) => { setText(t); setHtml(h); }} placeholder="Write your message..." />
 
           {/* Status messages — shrink-0 */}
           {uploading && (
