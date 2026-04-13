@@ -158,17 +158,32 @@ export async function importExportRoutes(app: FastifyInstance) {
     if (body.sourceSsl) args.push("--ssl1");
 
     // Run async — don't await
+    const { notifyClient } = await import("../../lib/notify.js");
+
     execFileAsync("imapsync", args, { timeout: 3600000 }) // 1 hour timeout
       .then(({ stdout }) => {
-        logger.info({ destEmail, source: body.sourceHost }, `IMAP sync completed: ${stdout.split("\n").filter(l => l.includes("Messages")).join(", ")}`);
+        const msgLines = stdout.split("\n").filter(l => l.includes("Messages"));
+        logger.info({ destEmail, source: body.sourceHost }, `IMAP sync completed: ${msgLines.join(", ")}`);
         logAudit({ actorType: "client", action: "imap.sync.completed", targetType: "mailbox", targetId: body.mailboxId, details: { source: body.sourceHost } });
+        notifyClient(clientId, "migration_complete", `Migration complete: ${destEmail}`, {
+          message: `All emails from ${body.sourceHost} have been copied to ${destEmail}.`,
+          actionUrl: "/portal/mailboxes",
+          actionLabel: "View Mailbox",
+          severity: "info",
+        });
       })
       .catch((err) => {
         logger.error({ destEmail, source: body.sourceHost, err: err.message }, "IMAP sync failed");
         logAudit({ actorType: "client", action: "imap.sync.failed", targetType: "mailbox", targetId: body.mailboxId, details: { source: body.sourceHost, error: err.message?.substring(0, 200) } });
+        notifyClient(clientId, "migration_failed", `Migration failed: ${destEmail}`, {
+          message: `Failed to import from ${body.sourceHost}. Check credentials and try again.`,
+          actionUrl: "/portal/migration",
+          actionLabel: "Retry",
+          severity: "critical",
+        });
       });
 
-    return { message: "Import started. This may take several minutes depending on mailbox size. Check your mailbox for imported emails." };
+    return { message: "Migration started. This may take 10-30 minutes. You'll receive a notification when complete." };
   });
 
   // ==========================================

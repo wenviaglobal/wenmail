@@ -10,7 +10,7 @@ export function PortalMigrationPage() {
 
   const tabs = [
     { id: "csv" as const, label: "Bulk Create (CSV)", icon: FileSpreadsheet },
-    { id: "imap" as const, label: "Import Emails", icon: Upload },
+    { id: "imap" as const, label: "Migrate Mailbox", icon: Upload },
     { id: "export" as const, label: "Export", icon: Download },
   ];
 
@@ -166,12 +166,13 @@ function ImapImport() {
   return (
     <div className="space-y-6">
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-5">
-        <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-2">Import emails from your old provider</h3>
+        <h3 className="font-semibold text-amber-900 dark:text-amber-300 mb-2">Migrate your entire mailbox from old provider</h3>
         <p className="text-sm text-amber-700 dark:text-amber-400">
-          Copies all emails from your old mailbox to WenMail using IMAP sync. Your old emails are NOT deleted — they're copied.
+          Copies <strong>ALL</strong> emails, folders, and attachments from your old mailbox to WenMail in one go.
+          Your old emails are NOT deleted — they're copied. One submission per mailbox.
         </p>
         <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
-          Gmail users: Use an "App Password" (Settings → Security → App Passwords), not your regular password.
+          This may take 10-30 minutes depending on mailbox size. Gmail users: Use an "App Password" (Settings → Security → App Passwords).
         </p>
       </div>
 
@@ -242,7 +243,7 @@ function ImapImport() {
         <button onClick={handleImport}
           disabled={!selectedMailbox || !form.sourceHost || !form.sourceUser || !form.sourcePassword || !form.destPassword || loading}
           className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-          <Upload size={16} /> {loading ? "Starting Import..." : "Start Import"}
+          <Upload size={16} /> {loading ? "Starting Migration..." : "Start Migration"}
         </button>
       </div>
     </div>
