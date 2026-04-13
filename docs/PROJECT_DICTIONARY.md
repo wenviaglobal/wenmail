@@ -74,6 +74,8 @@ Domain Verification Enforcement:
   SQL auth query requires d.verified=true AND d.dkim_configured=true AND d.spf_configured=true
   Unverified domains cannot authenticate for IMAP at all
   Webmail login returns a specific error explaining the domain is not verified
+Sieve Spam Filter:
+  Global Sieve script auto-moves messages with spam headers (X-Spam-Flag: YES) to the Junk folder
 ```
 
 ### Rspamd
@@ -98,6 +100,7 @@ Anti-Spam Stack:
   - Per-user rate limiting: 3 messages/min, 100 messages/hr per sender
   - Postfix sender verification + HELO checks
   - Custom blocklist sync from admin UI
+  - Sieve spam filter: global script auto-moves spam-flagged messages to Junk folder
 ```
 
 ### Fail2ban
@@ -148,6 +151,7 @@ Config:      max_connections = 300
 | `audit_log` | Admin action history | id (bigserial), actor_type, actor_id, action, target_type, target_id, details (JSONB), ip_address (inet) |
 | `password_reset_requests` | DB-based password reset (no email) | id (uuid), client_user_id (FK), client_id (FK), mailbox_id (FK, nullable), email, request_type ('portal'/'mailbox'), status ('pending'/'completed'/'rejected'), resolved_by (FK admins), resolved_at, notes, created_at |
 | `blocklist` | Custom bans (IP/email/domain) | id (uuid), type ('ip'/'email'/'domain'), value, reason, permanent, expires_at, created_by (FK admins), created_at |
+| `notifications` | Centralized notification system | id (uuid), target_type ('admin'/'client'), target_id (uuid, nullable), type, title, message, action_url, severity ('info'/'warning'/'error'/'success'), read, dismissed, metadata (JSONB), created_at |
 
 #### Unique Constraints
 
@@ -218,9 +222,13 @@ Route Registration:
     /api/admin/abuse      -> abuseRoutes
     /api/admin/bans       -> bansRoutes
     /api/admin/settings   -> settingsRoutes
+    /api/admin/notifications -> notificationRoutes (admin)
   Client Portal routes:
     /api/client-portal/auth -> clientAuthRoutes
     /api/client-portal      -> portalRoutes
+    /api/client-portal/notifications -> notificationRoutes (client)
+    /api/client-portal/import -> importExportRoutes
+    /api/client-portal/export -> importExportRoutes
 ```
 
 ### Module: auth
@@ -464,6 +472,45 @@ Functions:
                                   Used by: domain creation route, admin dns-guide endpoint, portal dns-guide endpoint
 ```
 
+### Module: notifications
+```
+Location:    backend/src/modules/notifications/ (admin), backend/src/modules/client-portal/notification.routes.ts (client)
+Type:        backend
+Depends On:  PostgreSQL (notifications table), auth guards
+Used By:     Frontend admin (notification bell), Client Portal (notification bell)
+Description: Centralized notification system — CRUD for notifications with read/dismiss state
+Files:
+  notification.routes.ts (admin)   -> admin notification endpoints
+  notification.routes.ts (portal)  -> client notification endpoints
+Endpoints (identical pattern for admin and client):
+  GET    /api/admin/notifications              -> list admin notifications (target_type='admin')
+  GET    /api/admin/notifications/unread-count -> unread count
+  PUT    /api/admin/notifications/:id/read     -> mark as read
+  PUT    /api/admin/notifications/:id/dismiss  -> dismiss notification
+  POST   /api/admin/notifications/mark-all-read -> mark all as read
+  POST   /api/admin/notifications/clear-all    -> clear all dismissed/read
+  (same pattern under /api/client-portal/notifications/*)
+```
+
+### Module: import-export
+```
+Location:    backend/src/modules/client-portal/import-export.routes.ts
+Type:        backend
+Depends On:  PostgreSQL (mailboxes, domains tables), imapsync (system binary), client auth guard, notify.ts
+Used By:     Client Portal (import/export page)
+Description: CSV bulk mailbox creation, IMAP migration via imapsync, export info
+Files:
+  import-export.routes.ts -> all import/export endpoints
+Endpoints:
+  POST   /api/client-portal/import/csv          -> CSV bulk mailbox creation
+  GET    /api/client-portal/import/csv-template  -> download CSV template
+  POST   /api/client-portal/import/imap          -> IMAP sync migration (triggers imapsync)
+  GET    /api/client-portal/export/info          -> export instructions and info
+Notifications:
+  Migration complete -> notifyClient() with severity='success'
+  Migration failed   -> notifyClient() with severity='error'
+```
+
 ### Module: client-portal/auth
 ```
 Location:    backend/src/modules/client-portal/
@@ -514,6 +561,7 @@ Endpoints:
   GET    /api/client-portal/billing                      -> client's invoices + payments
   GET    /api/client-portal/mail-settings                -> IMAP/SMTP/webmail settings (hostname, ports, security — from platform_settings)
   GET    /api/client-portal/migration/info               -> import/export instructions (IMAP sync, Maildir export, MBOX export)
+  DELETE /api/client-portal/password-resets/:id          -> dismiss/reject a mailbox password reset request
 ```
 
 ### Module: billing (Admin) — Password Resets
@@ -521,14 +569,18 @@ Endpoints:
 Location:    backend/src/modules/billing/
 Description: Three reset flows — mail user->client (mailbox type), client->admin (portal type), password change modal
 Endpoints (additional, registered alongside billing routes):
-  GET    /api/admin/password-resets        -> list all password reset requests (pending/completed/rejected, includes request_type)
+  GET    /api/admin/password-resets        -> list all password reset requests (admin sees portal type only)
   PUT    /api/admin/password-resets/:id    -> resolve a request (admin sets new password, marks completed/rejected)
+  DELETE /api/client-portal/password-resets/:id -> dismiss/reject a mailbox reset request (client portal)
 Reset Flow:
   1. Mail user -> Client: mailbox user requests via webmail forgot-password (request_type='mailbox', mailbox_id set)
-     Client sees notification bell + banner in portal to resolve it
+     Client receives notification in portal (no banner — notifications only)
   2. Client -> Admin: client user requests via portal forgot-password (request_type='portal')
      Admin resolves from password-resets page
   3. Password change modal: strength indicator, confirm field, eye toggle (replaces browser prompt)
+Visibility:
+  Admin sees only request_type='portal' requests
+  Client sees only request_type='mailbox' requests
 ```
 
 ### Background Workers (BullMQ)
@@ -591,7 +643,7 @@ Compose Window:
   - New components: email-chips.tsx, rich-editor.tsx
 Auth:
   - Login cooldown: 5 failed attempts = 15 min lock per email address
-  - Forgot password: mail user requests reset, client gets notification bell + banner
+  - Forgot password: mail user requests reset, client gets notification in portal
 Webmail Settings (4 tabs):
   1. General   -> display name, page size
   2. Compose   -> signature editor
@@ -618,6 +670,11 @@ Files:
   password.ts     -> hashPassword / verifyPassword (argon2 for admin + client user auth)
                   -> hashPasswordForDovecot (SHA512-CRYPT format for mail accounts)
   redis.ts        -> ioredis client (redis) + subscriber connection (redisSubscriber)
+  notify.ts       -> centralized notification service
+                     notify(target_type, target_id, type, title, message, opts?) — create notification
+                     notifyAdmin(type, title, message, opts?) — shortcut for admin notifications
+                     notifyClient(clientId, type, title, message, opts?) — shortcut for client notifications
+                     Auto-generated on: password resets, IMAP migration complete/fail
 ```
 
 ### Config
@@ -850,6 +907,9 @@ Files:
   stat-card.tsx         -> dashboard summary number card
   email-chips.tsx       -> Gmail-style email chip input (To/CC/BCC) — type+Enter, X remove, double-click edit, paste multiple
   rich-editor.tsx       -> Tiptap rich text editor for compose (bold/italic/underline/lists/links/quotes/undo-redo)
+  notification-bell.tsx -> bell icon dropdown with unread count badge, scrollable notification list,
+                           per-item actions (navigate via action_url, mark read, dismiss),
+                           bulk actions (mark all read, clear all)
 Admin Sidebar Nav Items:
   Dashboard, Clients, Domains, Mailboxes, Aliases, Mail Logs, Audit Logs, Billing, Server Health, Abuse Monitor, Ban Management, Settings
 Icons: lucide-react
@@ -887,7 +947,7 @@ Files:
 ```
 Location:    frontend/src/components/portal-layout.tsx
 Type:        frontend
-Description: Separate sidebar layout for client portal (slate-800 bg, indigo-600 active, notification bell with badge count)
+Description: Separate sidebar layout for client portal (slate-800 bg, indigo-600 active, notification bell dropdown with unread count badge)
 Sidebar Nav Items:
   Dashboard, Getting Started, Domains, Mailboxes, Aliases, Mail Logs, Billing, Import / Export
 Displays: client name + user email in sidebar
@@ -922,10 +982,10 @@ Files:
                          includes "What are these records?" explainer + step-by-step registrar guide)
   mailboxes.tsx       -> manage mailboxes across client's domains + email setup instructions
                          (webmail URL, IMAP/SMTP settings with copy buttons, shown when mailboxes exist)
-  aliases.tsx         -> manage aliases across client's domains
+  aliases.tsx         -> manage aliases across client's domains (with error handling)
   logs.tsx            -> client's own mail logs (scoped to their domains)
   billing.tsx         -> view invoices and payment history
-  migration.tsx       -> import/export information and instructions
+  migration.tsx       -> import/export: CSV bulk mailbox creation, IMAP sync migration, export info
 ```
 
 ---
@@ -1081,12 +1141,13 @@ backend/
       env.ts                            -> Zod-validated environment variables
     db/
       index.ts                          -> Drizzle ORM instance (postgres-js)
-      schema.ts                         -> all 15 table definitions + relations
+      schema.ts                         -> all 16 table definitions + relations
     lib/
       errors.ts                         -> AppError + typed subclasses
       logger.ts                         -> pino logger
       password.ts                       -> argon2 (admin/client user) + SHA512-CRYPT (Dovecot) hashing
       redis.ts                          -> ioredis client + subscriber
+      notify.ts                         -> centralized notification service: notify(), notifyAdmin(), notifyClient()
     mail/
       postfix.ts                        -> reloadPostfix(), reloadDovecot()
       dovecot.ts                        -> recalcQuota(), kickUser(), getMailboxStats()
@@ -1102,6 +1163,8 @@ backend/
         client-auth.guard.ts            -> JWT preHandler hook (client, checks type="client")
         client-auth.routes.ts           -> client login, refresh, me, password change
         portal.routes.ts                -> client self-service: dashboard, domains, mailboxes, aliases, logs, billing, migration
+        notification.routes.ts          -> client notification endpoints (list, read, dismiss, clear)
+        import-export.routes.ts         -> CSV bulk import, IMAP migration, export info
       clients/
         client.routes.ts                -> CRUD /api/clients
         client.service.ts               -> client business logic + stats
@@ -1129,6 +1192,8 @@ backend/
       settings/
         settings.routes.ts              -> GET/PUT /api/admin/settings
         settings.service.ts             -> key-value store, defaults, buildDnsInstructions()
+      notifications/
+        notification.routes.ts          -> admin notification endpoints (list, read, dismiss, clear)
     workers/
       index.ts                          -> startWorkers() orchestrator
       queues.ts                         -> BullMQ queue definitions
@@ -1165,6 +1230,7 @@ frontend/
       stat-card.tsx                     -> dashboard stat card
       email-chips.tsx                   -> Gmail-style email chip input (To/CC/BCC)
       rich-editor.tsx                   -> Tiptap rich text compose editor
+      notification-bell.tsx             -> bell dropdown with unread count, navigate/read/dismiss actions
     hooks/
       use-auth.ts                       -> admin auth state + token management
       use-portal-auth.ts                -> portal auth state + token management (portalAccessToken)
@@ -1203,7 +1269,7 @@ frontend/
         aliases.tsx                     -> client alias management
         logs.tsx                        -> client's own mail logs
         billing.tsx                     -> client invoice + payment history
-        migration.tsx                   -> import/export information
+        migration.tsx                   -> import/export: CSV bulk import, IMAP migration, export info
 roundcube-custom/
   logo.svg                              -> WenMail logo (light mode)
   logo-dark.svg                         -> WenMail logo (dark mode)

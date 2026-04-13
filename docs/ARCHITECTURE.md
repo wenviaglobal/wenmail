@@ -560,6 +560,25 @@ CREATE TABLE blocklist (
     created_by  UUID REFERENCES admins(id),
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================
+-- NOTIFICATIONS (centralized notification system)
+-- ============================================
+
+CREATE TABLE notifications (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    target_type VARCHAR(20) NOT NULL,       -- admin, client
+    target_id   UUID,                        -- client_id for client notifications, null for admin
+    type        VARCHAR(50) NOT NULL,        -- password_reset, migration_complete, migration_failed, etc.
+    title       VARCHAR(255) NOT NULL,
+    message     TEXT NOT NULL,
+    action_url  VARCHAR(500),                -- optional deep-link URL
+    severity    VARCHAR(20) DEFAULT 'info',  -- info, warning, error, success
+    read        BOOLEAN DEFAULT FALSE,
+    dismissed   BOOLEAN DEFAULT FALSE,
+    metadata    JSONB,                       -- flexible extra data
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ### Key Relationships
@@ -570,6 +589,7 @@ clients 1--* client_users
 clients 1--* domains
 clients 1--* mailboxes
 clients 1--* aliases
+clients 1--* notifications (target_type='client', target_id=client_id)
 clients 1--* invoices
 invoices 1--* payments
 domains 1--* mailboxes
@@ -596,7 +616,7 @@ backend/
 │   │
 │   ├── db/
 │   │   ├── index.ts                   # Drizzle client instance
-│   │   ├── schema.ts                  # ALL Drizzle table definitions (15 tables)
+│   │   ├── schema.ts                  # ALL Drizzle table definitions (16 tables)
 │   │   └── migrations/               # SQL migration files (drizzle-kit)
 │   │       ├── 0001_*.sql             # Initial schema
 │   │       └── 0002_fuzzy_chimera.sql # password_reset_requests table
@@ -610,7 +630,9 @@ backend/
 │   │   ├── client-portal/
 │   │   │   ├── client-auth.routes.ts  # POST /api/client-portal/auth/login, /refresh, /me, /password
 │   │   │   ├── client-auth.guard.ts   # Client JWT guard (checks type === "client")
-│   │   │   └── portal.routes.ts       # All client self-service: domains, mailboxes, aliases, logs, billing, migration
+│   │   │   ├── portal.routes.ts       # All client self-service: domains, mailboxes, aliases, logs, billing, migration
+│   │   │   ├── notification.routes.ts # Client notification endpoints (list, read, dismiss, clear)
+│   │   │   └── import-export.routes.ts # CSV bulk import, IMAP migration, export info
 │   │   │
 │   │   ├── clients/
 │   │   │   ├── client.routes.ts       # Admin CRUD for clients
@@ -653,9 +675,12 @@ backend/
 │   │   ├── bans/
 │   │   │   └── bans.routes.ts         # Fail2ban IP view/ban/unban, custom blocklist CRUD with Rspamd sync, audit logged
 │   │   │
-│   │   └── settings/
-│   │       ├── settings.routes.ts     # GET/PUT /api/admin/settings
-│   │       └── settings.service.ts    # getSetting(), getAllSettings(), updateSettings(), buildDnsInstructions()
+│   │   ├── settings/
+│   │   │   ├── settings.routes.ts     # GET/PUT /api/admin/settings
+│   │   │   └── settings.service.ts    # getSetting(), getAllSettings(), updateSettings(), buildDnsInstructions()
+│   │   │
+│   │   └── notifications/
+│   │       └── notification.routes.ts # Admin notification endpoints (list, read, dismiss, clear)
 │   │
 │   ├── workers/
 │   │   ├── index.ts                   # Register all workers, check Redis version, set schedules
@@ -675,7 +700,8 @@ backend/
 │       ├── password.ts                # hashPassword (argon2), hashPasswordForDovecot (SHA512-CRYPT), verifyPassword
 │       ├── logger.ts                  # Pino logger instance
 │       ├── redis.ts                   # ioredis client instance
-│       └── errors.ts                  # AppError, NotFoundError, ConflictError, LimitExceededError
+│       ├── errors.ts                  # AppError, NotFoundError, ConflictError, LimitExceededError
+│       └── notify.ts                  # Centralized notification service: notify(), notifyAdmin(), notifyClient()
 │
 ├── drizzle.config.ts                  # Drizzle Kit config
 ├── package.json
@@ -763,7 +789,8 @@ frontend/
 │   │   ├── quota-bar.tsx              # Storage usage bar
 │   │   ├── stat-card.tsx              # Dashboard stat cards
 │   │   ├── email-chips.tsx            # Gmail-style email chips (To/CC/BCC) — type+Enter, X remove, double-click edit, paste multiple
-│   │   └── rich-editor.tsx            # Tiptap rich text editor (bold/italic/underline/lists/links/quotes/undo-redo)
+│   │   ├── rich-editor.tsx            # Tiptap rich text editor (bold/italic/underline/lists/links/quotes/undo-redo)
+│   │   └── notification-bell.tsx      # Bell dropdown with unread count badge, actions: navigate, mark read, dismiss
 │   │
 │   ├── hooks/
 │   │   ├── use-auth.ts               # Admin auth state
@@ -829,6 +856,12 @@ frontend/
 | DELETE | /api/admin/bans/blocklist         | Remove blocklist entry                      |
 | GET    | /api/admin/abuse/overview         | Abuse overview (Rspamd stats, high volume, bounces) |
 | GET    | /api/admin/abuse/alerts           | Active abuse alerts (auto-refresh)          |
+| GET    | /api/admin/notifications          | List admin notifications                   |
+| GET    | /api/admin/notifications/unread-count | Unread notification count                |
+| PUT    | /api/admin/notifications/:id/read | Mark notification as read                  |
+| PUT    | /api/admin/notifications/:id/dismiss | Dismiss notification                    |
+| POST   | /api/admin/notifications/mark-all-read | Mark all notifications read           |
+| POST   | /api/admin/notifications/clear-all | Clear all notifications                  |
 | GET    | /api/health                       | Public health check                        |
 
 ### Client Portal Routes (JWT type: client)
@@ -858,6 +891,17 @@ frontend/
 | GET    | /api/client-portal/billing                     | Client's invoices + payments           |
 | GET    | /api/client-portal/mail-settings               | IMAP/SMTP/webmail config from settings |
 | GET    | /api/client-portal/migration/info              | Import/export instructions             |
+| GET    | /api/client-portal/notifications               | List client notifications              |
+| GET    | /api/client-portal/notifications/unread-count  | Unread notification count              |
+| PUT    | /api/client-portal/notifications/:id/read      | Mark notification as read              |
+| PUT    | /api/client-portal/notifications/:id/dismiss   | Dismiss notification                   |
+| POST   | /api/client-portal/notifications/mark-all-read | Mark all notifications read            |
+| POST   | /api/client-portal/notifications/clear-all     | Clear all notifications                |
+| DELETE | /api/client-portal/password-resets/:id         | Dismiss/reject password reset request  |
+| POST   | /api/client-portal/import/csv                  | CSV bulk mailbox creation              |
+| GET    | /api/client-portal/import/csv-template         | Download CSV template                  |
+| POST   | /api/client-portal/import/imap                 | IMAP sync migration (via imapsync)     |
+| GET    | /api/client-portal/export/info                 | Export instructions and info           |
 | POST   | /api/webmail/ensure-folder                     | Ensure IMAP folder exists               |
 | POST   | /api/webmail/change-password                   | Change mailbox password from webmail    |
 
@@ -953,23 +997,35 @@ backed by Redis sessions, resulting in 13-83x faster webmail performance.
 
 **Webmail Auth:**
 - Login cooldown: 5 failed attempts = 15 min lock per email address
-- Forgot password: mail user submits request, client gets notification bell + banner in portal
+- Forgot password: mail user submits request, client gets notification in portal
 
-### Notification Bell
+### Notification System
 
-Both admin and client portal layouts include a notification bell icon with badge count.
-Used to surface pending password reset requests. Admin sees all pending resets; client sees
-resets from their mailbox users (with a banner prompt to resolve them).
+Centralized notification system backed by the `notifications` DB table. Both admin and client portal
+layouts include a notification bell dropdown with unread count badge. Notifications support actions:
+navigate (deep-link via action_url), mark read, and dismiss.
+
+**Notification service** (`lib/notify.ts`): `notify()`, `notifyAdmin()`, `notifyClient()` — used to
+create notifications programmatically. Auto-generated on: password resets, IMAP migration complete/fail.
+
+**Notification types**: Admin sees `target_type='admin'` (portal password resets); client sees
+`target_type='client'` (mailbox password resets, migration results). Each notification has a severity
+level (info, warning, error, success) and optional metadata (JSONB).
+
+**Bell dropdown component** (`notification-bell.tsx`): unread count badge, scrollable list,
+per-notification actions (navigate, mark read, dismiss), bulk actions (mark all read, clear all).
 
 ### Password Reset Flows
 
 Three DB-based reset flows (no email required):
-1. **Mail user -> Client**: mailbox user requests reset via webmail forgot-password; client sees notification bell + banner in portal
+1. **Mail user -> Client**: mailbox user requests reset via webmail forgot-password; client receives a notification (no banner)
 2. **Client -> Admin**: client portal user requests reset via portal forgot-password; admin resolves from billing/password-resets page
 3. **Password change modal**: used by both client portal and webmail — strength indicator, confirm field, eye toggle (replaced browser prompt)
 
 The `password_reset_requests` table uses `request_type` ('portal' or 'mailbox') and optional `mailbox_id`
-to distinguish between portal user resets and mailbox user resets.
+to distinguish between portal user resets and mailbox user resets. Admin sees only `portal` type requests;
+client sees only `mailbox` type requests. Clients can dismiss/reject requests via
+`DELETE /api/client-portal/password-resets/:id`.
 
 ### Login Cooldown
 
@@ -1142,6 +1198,7 @@ iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
 - Rspamd — spam scoring, greylisting (with allowlist for Gmail/Outlook/major providers), RBL/DNSBL checks (Spamhaus, Barracuda, SpamCop), virus scanning (ClamAV)
 - Rspamd spam thresholds — reject >15, add to junk >6, greylist >4
 - Rspamd per-user rate limiting — 3 messages/min, 100 messages/hr per sender
+- Sieve spam filter — auto-moves messages flagged as spam to the Junk folder
 - Postfix sender verification + HELO checks
 - Custom blocklist (IP/email/domain) with Rspamd sync, managed via admin UI
 
@@ -1162,17 +1219,25 @@ iterate_query = SELECT CONCAT(m.local_part, '@', d.domain_name) AS user
 
 ---
 
-## Migration Support
+## Migration & Import/Export
 
 ### Import (client moves TO your system)
+
+**CSV Bulk Import**: Upload a CSV file to create mailboxes in bulk.
+- `POST /api/client-portal/import/csv` — parse and create mailboxes from CSV
+- `GET /api/client-portal/import/csv-template` — download CSV template
+
+**IMAP Sync Migration**: Migrate mail from another server using imapsync.
+- `POST /api/client-portal/import/imap` — triggers server-side imapsync
+- Generates notifications on completion (success) or failure (error)
+
 ```bash
 imapsync --host1 old.server.com --user1 user@client.com \
          --host2 mail.yourplatform.com --user2 user@client.com
 ```
 
-Client portal provides import/export instructions at `/api/client-portal/migration/info`.
-
 ### Export (client moves AWAY)
+- `GET /api/client-portal/export/info` — export instructions and info
 - IMAP access (they run imapsync from their end)
 - Maildir tar export
 - mbox conversion
